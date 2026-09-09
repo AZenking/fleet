@@ -40,15 +40,38 @@ pnpm fleet --version
   不影响"环境就绪"判定（宪法原则 I：加速器不是硬依赖）。
 - 退出码：`0` 无 error；`1` 存在 error；`2` 用法错误（两种输出模式一致）。
 
+## fleet repo investigate
+
+仓库调查：对一个仓库问题返回带源码锚点的引用。CodeGraph 健康时走
+结构化路径（符号 + 调用关系）；不可用、超时、索引过期、符号缺失/
+歧义、与源码冲突时自动降级到原生搜索（ripgrep → 内置遍历）——
+调查永不因 CodeGraph 失败而失败。
+
+```bash
+pnpm fleet repo investigate "loadFleetConfig 在哪里被抛出"   # 文本
+pnpm fleet repo investigate "FleetError" --json             # 结构化
+# 可选：--repo <path> 目标仓库；--max-refs <n> 引用上限；
+#       --include-generated 包含产物目录
+```
+
+- 输出记录服务路径（codegraph / search / source）、耗时与全部降级
+  原因（code + detail），`--json` 与文本模式退出码语义一致。
+- 关键证据一律锚定到真实源码位置（Static Truth = Source）。
+- 索引过期只提示 `codegraph sync` 建议，Fleet 永不代为重建（宪法 VI）。
+- 验证手册：[specs/002-m1-codegraph-fallback/quickstart.md](specs/002-m1-codegraph-fallback/quickstart.md)
+
 ## 仓库结构
 
 ```text
-apps/cli/         fleet 命令行（doctor / version）
-packages/core/    共享基础能力：config / errors / events / fs / git /
-                  ids / logging / probe / diagnostics
-configs/          fleet.yaml（仓库级 Fleet 配置）
-tests/cli/        CLI 进程级 e2e
-specs/            Spec Kit 规格与设计文档
+apps/cli/               fleet 命令行（doctor / version / repo investigate）
+packages/core/          共享基础能力：config / errors / events / fs / git /
+                        ids / logging / probe / diagnostics
+packages/repository/    Repository Intelligence：codegraph 适配层 +
+                        原生回退（search / source / git）+ investigate 编排
+configs/                fleet.yaml（仓库级 Fleet 配置）
+tests/cli/              CLI 进程级 e2e
+tests/fixtures/         调查夹具仓库（sample-repo）
+specs/                  Spec Kit 规格与设计文档
 ```
 
 ## 文档

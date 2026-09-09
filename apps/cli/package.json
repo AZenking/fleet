@@ -21,6 +21,7 @@
   },
   "dependencies": {
     "@fleet/core": "workspace:*",
+    "@fleet/repository": "workspace:*",
     "commander": "^15.0.0"
   },
   "devDependencies": {

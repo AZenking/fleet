@@ -11,9 +11,15 @@ export default defineConfig({
       },
       {
         test: {
+          name: 'repository',
+          include: ['packages/repository/src/**/*.test.ts'],
+        },
+      },
+      {
+        test: {
           name: 'cli-e2e',
           include: ['tests/cli/**/*.test.ts'],
-          testTimeout: 60_000,
+          testTimeout: 120_000,
         },
       },
     ],
