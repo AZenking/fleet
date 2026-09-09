@@ -1,0 +1,9 @@
+dist/
+node_modules/
+coverage/
+pnpm-lock.yaml
+specs/
+.specify/
+agent-fleet-architecture.md
+agent-fleet-roadmap.md
+.fleet/

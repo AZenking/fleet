@@ -1,0 +1,36 @@
+{
+  "name": "@fleet/core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Agent Fleet 共享基础能力：配置、错误、日志、事件、ID、文件系统、Git 检测、探测",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest run --project core"
+  },
+  "dependencies": {
+    "execa": "^10.0.1",
+    "semver": "^7.8.5",
+    "yaml": "^2.9.0",
+    "zod": "^4.5.4"
+  },
+  "devDependencies": {
+    "@types/node": "^26.5.0",
+    "@types/semver": "^7.8.0",
+    "tsup": "^8.5.1",
+    "typescript": "^5.9.3"
+  }
+}

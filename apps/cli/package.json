@@ -1,0 +1,31 @@
+{
+  "name": "@fleet/cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "fleet 命令行工具",
+  "engines": {
+    "node": ">=24"
+  },
+  "bin": {
+    "fleet": "./dist/bin.js"
+  },
+  "main": "./dist/bin.js",
+  "types": "./dist/bin.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest run --project cli-e2e"
+  },
+  "dependencies": {
+    "@fleet/core": "workspace:*",
+    "commander": "^15.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.5.0",
+    "tsup": "^8.5.1",
+    "typescript": "^5.9.3"
+  }
+}

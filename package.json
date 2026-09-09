@@ -1,0 +1,31 @@
+{
+  "name": "agent-fleet",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Agent Fleet — 多 Agent 软件工程运行时（Reflex / Focus / Reason / Insight / Wisdom）",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "build": "pnpm -r build",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "vitest run",
+    "check": "pnpm lint && pnpm format:check && pnpm build && pnpm test",
+    "fleet": "node apps/cli/dist/bin.js"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^26.5.0",
+    "eslint": "^10.10.0",
+    "eslint-config-prettier": "^10.1.8",
+    "execa": "^10.0.1",
+    "prettier": "^3.9.6",
+    "tsup": "^8.5.1",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.70.0",
+    "vitest": "^5.0.0"
+  }
+}

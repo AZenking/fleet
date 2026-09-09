@@ -1,0 +1,23 @@
+import { z } from 'zod';
+
+/**
+ * FleetConfiguration — configs/fleet.yaml 的 Schema（data-model.md §1）。
+ * strict：未知字段拒绝，保证配置面收敛。
+ */
+
+const defaultsSchema = z.strictObject({
+  maxConcurrency: z.number().int().min(1).max(64).default(3),
+  retry: z.number().int().min(0).max(10).default(1),
+  /** 占位字段组：M0 只存储不解释（budget 语义在后续里程碑定义） */
+  budget: z.record(z.string(), z.unknown()).optional(),
+});
+
+export const fleetConfigSchema = z.strictObject({
+  /** 配置格式版本；M0 仅接受 1 */
+  version: z.literal(1),
+  /** 目标仓库路径；缺省 = 仓库根 */
+  repository: z.string().optional(),
+  defaults: defaultsSchema.default({ maxConcurrency: 3, retry: 1 }),
+});
+
+export type FleetConfiguration = z.infer<typeof fleetConfigSchema>;
