@@ -380,7 +380,14 @@ export async function investigate(
       recent.has(reference.filePath) ? 0 : 1;
     const originScore = (reference: Reference): number =>
       reference.origin === 'codegraph' ? 0 : 1;
-    return recentScore(a) - recentScore(b) || originScore(a) - originScore(b);
+    // 字典序兜底：rg 并行遍历的命中顺序不稳定（M3 走查发现），
+    // 无此兜底时 maxRefs 截断会造成同命令两次运行的结果集漂移
+    return (
+      recentScore(a) - recentScore(b) ||
+      originScore(a) - originScore(b) ||
+      a.filePath.localeCompare(b.filePath) ||
+      a.startLine - b.startLine
+    );
   });
   const references = deduped.slice(0, maxRefs);
 

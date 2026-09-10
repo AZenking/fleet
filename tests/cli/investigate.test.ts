@@ -169,7 +169,18 @@ describe('fleet repo investigate（故障注入 e2e）', () => {
     // 最小 PATH：node 已用绝对路径调用，codegraph（fnm 目录）与
     // rg（homebrew 目录）都不在其中
     const result = await runFleet(
-      ['repo', 'investigate', 'FleetError', '--repo', repoRoot, '--json'],
+      // verify：本仓库可能已有 wiki（fast 会直接用 wiki 免搜索），
+      // walk 兜底是 verify 全链的属性
+      [
+        'repo',
+        'investigate',
+        'FleetError',
+        '--repo',
+        repoRoot,
+        '--mode',
+        'verify',
+        '--json',
+      ],
       { env: { ...process.env, PATH: '/usr/bin:/bin' } },
     );
     expect(result.exitCode).toBe(0);

@@ -100,7 +100,9 @@ async function tryRipgrep(
   options: SearchOptions,
   maxHits: number,
 ): Promise<SearchHit[] | undefined> {
-  const args: string[] = ['--json', '--no-messages'];
+  // --sort path：确定性遍历——并行输出顺序不定，命中数超上限时截断
+  // 子集会漂移（M3 走查发现，SC-003/004 的复现前提）
+  const args: string[] = ['--json', '--no-messages', '--sort', 'path'];
   for (const pattern of options.patterns) {
     args.push(
       '-e',

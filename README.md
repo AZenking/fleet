@@ -5,8 +5,9 @@ Reflex / Focus / Reason / Insight / Wisdom 五个认知角色完成实现、验�
 Review。Codex Desktop 负责需求讨论与最终审阅，Repository Intelligence
 负责大仓库的高效理解。
 
-当前进度：**M0 Foundation / M1 CodeGraph + Fallback / M2 LLM Wiki 已交付**
-（工程基线 + 环境诊断 + 仓库调查链路 + 仓库持久知识层）。
+当前进度：**Phase A（Repository Intelligence 0.1）已交付**——
+M0 工程基线 / M1 CodeGraph + Fallback / M2 LLM Wiki / M3 Evidence
+System（findings 证据链 + FAST/VERIFY 模式 + 冲突裁决）。
 
 ## 要求
 
@@ -43,23 +44,34 @@ pnpm fleet --version
 
 ## fleet repo investigate
 
-仓库调查：对一个仓库问题返回带源码锚点的引用。CodeGraph 健康时走
-结构化路径（符号 + 调用关系）；不可用、超时、索引过期、符号缺失/
-歧义、与源码冲突时自动降级到原生搜索（ripgrep → 内置遍历）——
-调查永不因 CodeGraph 失败而失败。
+仓库调查：对一个仓库问题返回**证据化结论**（findings）——每条结论
+是可读的 statement + 证据链（标注来源 wiki / codegraph / search /
+source / config 与锚定状态）+ 置信度（确定性规则推导）+ 已裁决的
+冲突（Static Truth 胜出留痕）。CodeGraph 健康时走结构化路径；不可
+用、超时、索引过期、符号缺失/歧义、与源码冲突时自动降级到原生搜索
+（ripgrep → 内置遍历）——调查永不因加速器失败而失败。
 
 ```bash
-pnpm fleet repo investigate "loadFleetConfig 在哪里被抛出"   # 文本
-pnpm fleet repo investigate "FleetError" --json             # 结构化
-# 可选：--repo <path> 目标仓库；--max-refs <n> 引用上限；
-#       --include-generated 包含产物目录
+pnpm fleet repo investigate "loadFleetConfig 在哪里被抛出"        # 默认 auto
+pnpm fleet repo investigate "FleetError" --mode verify --json     # 全链复核
+pnpm fleet repo investigate "认证 login 流程" --mode fast         # 快速（高风险仍自动升级）
+# 可选：--repo <path>；--max-refs <n>；--include-generated
 ```
 
-- 输出记录服务路径（codegraph / search / source）、耗时与全部降级
-  原因（code + detail），`--json` 与文本模式退出码语义一致。
-- 关键证据一律锚定到真实源码位置（Static Truth = Source）。
-- 索引过期只提示 `codegraph sync` 建议，Fleet 永不代为重建（宪法 VI）。
-- 验证手册：[specs/002-m1-codegraph-fallback/quickstart.md](specs/002-m1-codegraph-fallback/quickstart.md)
+- `--mode auto|fast|verify`：auto（缺省）按风险自动选择；fast 跳过
+  强制源码复核（加速源证据标 verified=false、置信度封顶 medium）；
+  verify 全链锚定。高风险判断（公共 API / Service / DB Schema /
+  认证 / 支付 / 大范围重构 / 配置驱动）**默认强制 verify，显式 fast
+  也不能豁免**；fast 零命中或加速源不可用时自动走 verify 全链。
+- 置信度规则：未决冲突或全部未复核 → low；fast 封顶 medium；
+  verified 多源一致 → high（规则可从 confidenceReason 追溯）。
+- wiki 作为调查加速源参与（fresh 才使用；缺失/stale/损坏只降级），
+  wiki 与源码冲突时 dead_path 留痕、codegraph 锚点偏移时以源码为准。
+- 关键证据一律锚定到真实源码位置（Static Truth = Source +
+  Config）；索引过期只提示 `codegraph sync` 建议，Fleet 永不代为
+  重建（宪法 VI）。
+- 验证手册：[specs/002-m1-codegraph-fallback/quickstart.md](specs/002-m1-codegraph-fallback/quickstart.md)（M1）/
+  [specs/004-m3-evidence-system/quickstart.md](specs/004-m3-evidence-system/quickstart.md)（M3）
 
 ## fleet wiki
 
@@ -94,7 +106,8 @@ packages/core/          共享基础能力：config / errors / events / fs / git
                         ids / logging / probe / diagnostics
 packages/repository/    Repository Intelligence：codegraph 适配层 +
                         原生回退（search / source / git）+ investigate 编排 +
-                        wiki（格式层 / 生成 / 校验 / 状态 / 更新 / 检索）
+                        wiki（格式层 / 生成 / 校验 / 状态 / 更新 / 检索）+
+                        evidence（findings / 模式裁决 / 置信度 / 冲突）
 configs/                fleet.yaml（仓库级 Fleet 配置）
 tests/cli/              CLI 进程级 e2e
 tests/fixtures/         调查夹具仓库（sample-repo）
@@ -108,6 +121,7 @@ specs/                  Spec Kit 规格与设计文档
 - M0 规格：[specs/001-m0-foundation/spec.md](specs/001-m0-foundation/spec.md)
 - M1 规格：[specs/002-m1-codegraph-fallback/spec.md](specs/002-m1-codegraph-fallback/spec.md)
 - M2 规格：[specs/003-m2-llm-wiki/spec.md](specs/003-m2-llm-wiki/spec.md)
+- M3 规格：[specs/004-m3-evidence-system/spec.md](specs/004-m3-evidence-system/spec.md)
 - 项目宪法：`.specify/memory/constitution.md`
 
 ## 质量门

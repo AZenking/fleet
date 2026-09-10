@@ -99,9 +99,9 @@ wiki 前后 investigate 一致（SC-004）；冲突注入两类 100% 裁决（SC
 
 ## Phase 6: Polish & Cross-Cutting Concerns
 
-- [ ] T018 [P] 更新根 `README.md`：investigate `--mode` 用法、findings/confidence 语义、高风险升级说明，进度更新至 M3（Phase A 收官），链接 specs/004-m3-evidence-system/quickstart.md
-- [ ] T019 按 quickstart.md 全景走查并记录：本仓库 SC-001 锚定抽查、SC-003 双跑一致、SC-006 计时、SC-004 隔离对照、C 段三态降级手工走查；问题回流修复后 `pnpm check` 全绿并按逻辑组提交 git
-- [ ] T020 Phase A 收官核查：对照 roadmap §5 Repository Intelligence 0.1 release gate 逐项记录达成状态（Wiki/CodeGraph/Fallback/Evidence 四能力 + MCP 暴露项标注"M12 落地"）；宪法合规复查（I/V/VI 重点：加速器非依赖、确定性、零新增依赖）并更新 README 进度声明
+- [x] T018 [P] 更新根 `README.md`：investigate `--mode` 用法、findings/confidence 语义、高风险升级说明，进度更新至 M3（Phase A 收官），链接 specs/004-m3-evidence-system/quickstart.md
+- [x] T019 按 quickstart.md 全景走查并记录：本仓库 SC-001 锚定抽查、SC-003 双跑一致、SC-006 计时、SC-004 隔离对照、C 段三态降级手工走查；问题回流修复后 `pnpm check` 全绿并按逻辑组提交 git
+- [x] T020 Phase A 收官核查：对照 roadmap §5 Repository Intelligence 0.1 release gate 逐项记录达成状态（Wiki/CodeGraph/Fallback/Evidence 四能力 + MCP 暴露项标注"M12 落地"）；宪法合规复查（I/V/VI 重点：加速器非依赖、确定性、零新增依赖）并更新 README 进度声明
 
 ---
 
