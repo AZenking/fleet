@@ -5,7 +5,8 @@ Reflex / Focus / Reason / Insight / Wisdom 五个认知角色完成实现、验�
 Review。Codex Desktop 负责需求讨论与最终审阅，Repository Intelligence
 负责大仓库的高效理解。
 
-当前进度：**M0 Foundation 已交付**（工程基线 + 环境诊断 + 共享基础能力）。
+当前进度：**M0 Foundation / M1 CodeGraph + Fallback / M2 LLM Wiki 已交付**
+（工程基线 + 环境诊断 + 仓库调查链路 + 仓库持久知识层）。
 
 ## 要求
 
@@ -60,14 +61,40 @@ pnpm fleet repo investigate "FleetError" --json             # 结构化
 - 索引过期只提示 `codegraph sync` 建议，Fleet 永不代为重建（宪法 VI）。
 - 验证手册：[specs/002-m1-codegraph-fallback/quickstart.md](specs/002-m1-codegraph-fallback/quickstart.md)
 
+## fleet wiki
+
+仓库持久知识层（LLM Wiki）：`.fleet/wiki/` 下的 Markdown 知识库，
+带 front matter 元数据（generated_from git 锚点 / updated_at /
+scope）与 generated 围栏——生成内容与人工内容物理隔离，更新永不
+覆盖围栏外的人工补充。检索用全文搜索 + index 导航，无向量库
+（宪法 VI）；Wiki 是加速器不是依赖，缺失或过期时其余命令照常工作
+（宪法 I）。
+
+```bash
+pnpm fleet wiki init                        # 建立骨架（幂等）
+pnpm fleet wiki build                       # 确定性事实提取（无 LLM）
+pnpm fleet wiki status                      # 页面级 stale 判定
+pnpm fleet wiki update                      # 只重算受影响页面
+pnpm fleet wiki query "调查链路在哪个包"     # 全文检索 + 可解释排序
+# 全部支持 --repo <path> / --json
+```
+
+- build 从仓库事实（包清单 / 依赖 / 模块注释 / 目录结构）生成页面
+  骨架；深度叙述由人或外部 LLM 工具写在围栏外，受同等校验保护。
+- stale 判定 = `git diff <锚点>..HEAD` 变化文件与页面 scope 的前缀
+  交集（纯集合运算）；update 只触碰受影响页，mixed 页写前自动备份
+  到 `.fleet/wiki/.backup/`。
+- 验证手册：[specs/003-m2-llm-wiki/quickstart.md](specs/003-m2-llm-wiki/quickstart.md)
+
 ## 仓库结构
 
 ```text
-apps/cli/               fleet 命令行（doctor / version / repo investigate）
+apps/cli/               fleet 命令行（doctor / version / repo investigate / wiki）
 packages/core/          共享基础能力：config / errors / events / fs / git /
                         ids / logging / probe / diagnostics
 packages/repository/    Repository Intelligence：codegraph 适配层 +
-                        原生回退（search / source / git）+ investigate 编排
+                        原生回退（search / source / git）+ investigate 编排 +
+                        wiki（格式层 / 生成 / 校验 / 状态 / 更新 / 检索）
 configs/                fleet.yaml（仓库级 Fleet 配置）
 tests/cli/              CLI 进程级 e2e
 tests/fixtures/         调查夹具仓库（sample-repo）
@@ -79,7 +106,8 @@ specs/                  Spec Kit 规格与设计文档
 - 架构基线：`agent-fleet-architecture.md`
 - 路线图：`agent-fleet-roadmap.md`
 - M0 规格：[specs/001-m0-foundation/spec.md](specs/001-m0-foundation/spec.md)
-- M0 验证手册：[specs/001-m0-foundation/quickstart.md](specs/001-m0-foundation/quickstart.md)
+- M1 规格：[specs/002-m1-codegraph-fallback/spec.md](specs/002-m1-codegraph-fallback/spec.md)
+- M2 规格：[specs/003-m2-llm-wiki/spec.md](specs/003-m2-llm-wiki/spec.md)
 - 项目宪法：`.specify/memory/constitution.md`
 
 ## 质量门

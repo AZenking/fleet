@@ -102,9 +102,9 @@ suggestions 退出码 0、wiki 缺失退出码 1 + 修复指引（FR-005/006）
 
 ## Phase 6: Polish & Cross-Cutting Concerns
 
-- [ ] T021 [P] 更新根 `README.md`：新增 `fleet wiki` 五命令用法、页面格式（围栏/scope）一段说明，链接 specs/003-m2-llm-wiki/quickstart.md
-- [ ] T022 [P] 隔离对照验证（宪法 I / SC-005）：e2e 增加"建 wiki 前后 `fleet repo investigate` 输出一致"断言 + `fleet doctor` 不受 wiki 状态影响断言；确认 investigate 排除目录含 `.fleet` 零改动
-- [ ] T023 按 quickstart.md 全景走查并记录：本仓库 SC-001 计时、SC-002 认知走查 5 题（≥4/5）、C 段增量与人工保护、D 段隔离对照；问题回流修复后 `pnpm check` 全绿并按逻辑组提交 git
+- [x] T021 [P] 更新根 `README.md`：新增 `fleet wiki` 五命令用法、页面格式（围栏/scope）一段说明，链接 specs/003-m2-llm-wiki/quickstart.md
+- [x] T022 [P] 隔离对照验证（宪法 I / SC-005）：e2e 增加"建 wiki 前后 `fleet repo investigate` 输出一致"断言 + `fleet doctor` 不受 wiki 状态影响断言；确认 investigate 排除目录含 `.fleet` 零改动
+- [x] T023 按 quickstart.md 全景走查并记录：本仓库 SC-001 计时、SC-002 认知走查 5 题（≥4/5）、C 段增量与人工保护、D 段隔离对照；问题回流修复后 `pnpm check` 全绿并按逻辑组提交 git
 
 ---
 
