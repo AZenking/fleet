@@ -31,6 +31,16 @@ export function registerRepoCommand(program: Command): void {
       Number.parseInt(value, 10),
     )
     .option('--include-generated', '包含生成代码 / 产物目录')
+    .option(
+      '--mode <mode>',
+      '调查模式：auto（默认，高风险自动 verify）/ fast（跳过强制源码复核）/ verify（全链复核）',
+      (value: string) => {
+        if (value !== 'auto' && value !== 'fast' && value !== 'verify') {
+          throw new Error(`无效的 mode：${value}（可选 auto/fast/verify）`);
+        }
+        return value;
+      },
+    )
     .action(
       async (
         question: string,
@@ -39,6 +49,7 @@ export function registerRepoCommand(program: Command): void {
           json?: boolean;
           maxRefs?: number;
           includeGenerated?: boolean;
+          mode?: 'auto' | 'fast' | 'verify';
         },
       ) => {
         let repoRoot: string;
@@ -54,6 +65,7 @@ export function registerRepoCommand(program: Command): void {
           repoRoot,
           maxRefs: options.maxRefs,
           includeGenerated: options.includeGenerated,
+          mode: options.mode,
         });
 
         const event: FleetEvent = {
@@ -66,6 +78,9 @@ export function registerRepoCommand(program: Command): void {
             pathsUsed: result.pathsUsed,
             referenceCount: result.references.length,
             durationMs: result.durationMs,
+            findingsCount: result.findings?.length ?? 0,
+            effectiveMode: result.mode?.effectiveMode,
+            confidence: result.findings?.[0]?.confidence ?? 'low',
           },
         };
         stderrLogger.debug(serializeEvent(event));
@@ -119,7 +134,27 @@ function renderHuman(result: InvestigationResult): string {
       lines.push(`    建议：${fallback.fixSuggestion}`);
     }
   }
+  for (const escalation of result.mode?.escalations ?? []) {
+    lines.push(`↗ 模式升级(${escalation.rule})：${escalation.detail}`);
+  }
   lines.push('─'.repeat(38));
+  for (const finding of result.findings ?? []) {
+    const counts = new Map<string, number>();
+    for (const item of finding.evidence) {
+      counts.set(item.source, (counts.get(item.source) ?? 0) + 1);
+    }
+    const sourceText = [...counts.entries()]
+      .map(([source, count]) => `${source}×${count}`)
+      .join(' ');
+    lines.push(
+      `[${finding.confidence}] ${finding.statement}${sourceText !== '' ? `（${sourceText}${finding.truncated === true ? '，已截断' : ''}）` : ''}`,
+    );
+    for (const conflict of finding.conflicts) {
+      lines.push(
+        `  ⚠ 冲突(${conflict.kind})：加速源称 ${conflict.accelerated.claim}，源码事实 ${conflict.truth.fact}（static_truth 胜出）`,
+      );
+    }
+  }
   lines.push(result.summary);
   return lines.join('\n');
 }

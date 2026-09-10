@@ -50,7 +50,7 @@ afterAll(async () => {
 });
 
 describe('fleet repo investigate（健康路径，US1 / SC-001 / SC-004 / T026 性能）', () => {
-  it('夹具仓库：PaymentService 返回锚定引用，走 codegraph 路径', async (context) => {
+  it('夹具仓库：PaymentService 返回锚定引用，走 codegraph 路径（verify）', async (context) => {
     if (!fixtureIndexed) {
       context.skip();
     }
@@ -60,6 +60,8 @@ describe('fleet repo investigate（健康路径，US1 / SC-001 / SC-004 / T026 �
       'PaymentService',
       '--repo',
       fixture,
+      '--mode',
+      'verify',
       '--json',
     ]);
     expect(result.exitCode).toBe(0);

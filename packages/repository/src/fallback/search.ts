@@ -32,6 +32,8 @@ export interface SearchOptions {
   rgCommand?: string;
   /** 强制使用内置遍历（测试确定性；不算 degraded） */
   forceWalk?: boolean;
+  /** 大小写不敏感匹配（M3：符号样式问题检索 wiki 内容用） */
+  caseInsensitive?: boolean;
 }
 
 export const DEFAULT_EXCLUDED_DIRS = [
@@ -100,7 +102,10 @@ async function tryRipgrep(
 ): Promise<SearchHit[] | undefined> {
   const args: string[] = ['--json', '--no-messages'];
   for (const pattern of options.patterns) {
-    args.push('-e', pattern);
+    args.push(
+      '-e',
+      options.caseInsensitive === true ? `(?i)${pattern}` : pattern,
+    );
   }
   if (options.includeGenerated !== true) {
     for (const dir of DEFAULT_EXCLUDED_DIRS) {
@@ -135,7 +140,11 @@ export async function walkSearch(
 ): Promise<SearchHit[]> {
   const hits: SearchHit[] = [];
   const regexes = options.patterns.map(
-    (pattern) => new RegExp(escapeRegExp(pattern)),
+    (pattern) =>
+      new RegExp(
+        escapeRegExp(pattern),
+        options.caseInsensitive === true ? 'i' : '',
+      ),
   );
   const excluded = new Set(
     options.includeGenerated === true ? ['.git'] : DEFAULT_EXCLUDED_DIRS,

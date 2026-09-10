@@ -143,6 +143,7 @@ export async function queryWiki(
       fs: options.fs,
       rgCommand: options.rgCommand,
       forceWalk: options.forceWalk,
+      caseInsensitive: true,
       maxHits: 200,
       timeoutMs: 2000,
     });

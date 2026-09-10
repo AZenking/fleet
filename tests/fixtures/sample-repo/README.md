@@ -11,6 +11,10 @@
 | `Logger`（class）              | `src/notify.ts`        | 同名符号第 2 处（歧义场景）                   |
 | `getRate`（function）          | `src/config-driven.ts` | 行为由 `config/rates.yaml` 驱动（高风险场景） |
 | `generatedHandler`（function） | `src/generated-api.ts` | 带 `@generated` 标记（高风险场景）            |
+| `AuthRepository`（class）      | `src/auth.ts`          | 高风险矩阵：Authentication 规则锚定           |
+| `login` / `validateSession`    | `src/auth.ts`          | 认证符号                                      |
+| `runMigrations`（function）    | `src/db-schema.ts`     | 高风险矩阵：DB Schema 规则锚定                |
+| `listPublicApi`（function）    | `src/public-api.ts`    | 高风险矩阵：public_api 规则锚定               |
 
 e2e 测试会在本目录执行 `codegraph init`（夹具准备，等同 git init 的
 地位）并在结束后清理 `.codegraph/`。

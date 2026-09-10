@@ -5,20 +5,39 @@ import type { CodeGraphAdapter } from '../codegraph/contract.js';
 import { recentChangedFiles } from '../fallback/git.js';
 import { searchPatterns } from '../fallback/search.js';
 import { verifyAnchor } from '../fallback/source.js';
+import { ExecaWikiGit } from '../wiki/git.js';
+import {
+  detectVerifyRisk,
+  resolveMode,
+  withEscalation,
+  type HighRiskMatch,
+} from '../evidence/rules.js';
+import { resolveFindings } from '../evidence/resolver.js';
+import type { AnchorConflictAttachment } from '../evidence/resolver.js';
+import type {
+  EffectiveMode,
+  Evidence,
+  EvidenceConflict,
+  ModeResolution,
+  RequestedMode,
+} from '../evidence/types.js';
+import { collectWikiEvidence } from '../evidence/wiki-source.js';
+import type { WikiGitPort } from '../wiki/git.js';
 import { planQuestion } from './planner.js';
 import { detectHighRisk, validateSymbolHits } from './policy.js';
 import type {
   FallbackReason,
+  InvestigationPath,
   InvestigationResult,
   Reference,
   ReferenceOrigin,
 } from './types.js';
 
 /**
- * investigate 编排（data-model 状态转换）：
- * plan → health → symbol/relations → policy.validate → source 锚定
- *      →（需要时）search → 汇总。
- * 宪法原则 I：任何 CodeGraph 故障只降级、不失败。
+ * investigate 编排（M3 版，data-model 状态转换）：
+ * plan → mode 裁决（auto/fast/verify + 高风险表）→ codegraph →
+ * （verify）source 锚定 →（无引用时）search 兜底 → findings 汇编。
+ * 宪法原则 I：任何 CodeGraph / wiki 故障只降级、不失败。
  */
 
 export interface InvestigateOptions {
@@ -27,6 +46,10 @@ export interface InvestigateOptions {
   fs?: FileSystemPort;
   maxRefs?: number;
   includeGenerated?: boolean;
+  /** 调查模式（M3 FR-004）：auto 默认（高风险 → verify）；fast 不豁免高风险 */
+  mode?: RequestedMode;
+  /** wiki stale 判定用的 git（测试可注入假实现；缺省 ExecaWikiGit） */
+  wikiGit?: WikiGitPort;
   /** 测试确定性：禁用 rg，直接内置遍历（不算 degraded） */
   forceWalkSearch?: boolean;
 }
@@ -53,6 +76,7 @@ function toReference(
     kind: input.kind,
     snippet: input.snippet ?? '',
     origin,
+    // codegraph 候选默认未复核；verify 锚定后置 true（fast 保持 false）
     verified: origin !== 'codegraph',
   };
 }
@@ -67,10 +91,42 @@ export async function investigate(
     options.adapter ?? new CodeGraphCliAdapter({ repoRoot: options.repoRoot });
   const maxRefs = options.maxRefs ?? 20;
   const fallbacks: FallbackReason[] = [];
-  const pathsUsed = new Set<ReferenceOrigin>();
+  const pathsUsed = new Set<InvestigationPath>();
   let searchEngine: 'ripgrep' | 'walk' | undefined;
 
   const plan = planQuestion(question);
+
+  // —— 模式裁决（M3：auto/fast/verify + 高风险表，FR-004/005）——
+  const riskMatches: HighRiskMatch[] = detectVerifyRisk({
+    keywords: plan.keywords,
+    question,
+  });
+  // M1 引用级高风险（动态/反射/配置驱动/生成代码）并入模式裁决：
+  // 语义保留——fast 不豁免，与 M1 的强制源码复核一致
+  if (detectHighRisk({ keywords: plan.keywords })) {
+    riskMatches.push({
+      rule: 'dynamic_pattern',
+      detail: '命中 M1 高风险模式（动态/反射/配置驱动/生成代码）',
+    });
+  }
+  let mode = resolveMode(options.mode ?? 'auto', riskMatches);
+
+  // —— wiki 阶段（M3：首个加速源，宪法 I 三态降级，FR-006）——
+  const wiki = await collectWikiEvidence(question, {
+    repoRoot: options.repoRoot,
+    fs,
+    git: options.wikiGit ?? new ExecaWikiGit(),
+    forceWalk: options.forceWalkSearch,
+  });
+  let wikiEvidence: Evidence[] = [];
+  let wikiConflicts: EvidenceConflict[] = [];
+  if (wiki.state === 'hit') {
+    wikiEvidence = wiki.evidence;
+    wikiConflicts = wiki.conflicts;
+    pathsUsed.add('wiki');
+  } else if (wiki.fallback !== undefined) {
+    fallbacks.push(wiki.fallback);
+  }
 
   // —— CodeGraph 阶段 ——
   const health = await adapter.health();
@@ -169,34 +225,61 @@ export async function investigate(
     }
   }
 
-  // —— 源码锚定（Static Truth）——
-  const anchored: Reference[] = [];
-  for (const reference of candidates) {
-    if (reference.origin !== 'codegraph') {
-      anchored.push(reference);
-      continue;
+  // —— 源码锚定（Static Truth；fast 跳过强制锚定，verified 保持 false）——
+  const anchorConflicts: AnchorConflictAttachment[] = [];
+  const anchorAll = (refs: Reference[]): Reference[] => {
+    const anchored: Reference[] = [];
+    for (const reference of refs) {
+      if (reference.origin !== 'codegraph') {
+        anchored.push(reference);
+        continue;
+      }
+      pathsUsed.add('source');
+      const outcome = verifyAnchor(fs, options.repoRoot, reference);
+      if (outcome === undefined) {
+        fallbacks.push({
+          code: 'conflict',
+          detail: `锚点校验失败：${reference.filePath}:${reference.startLine}（文件缺失或符号不在附近）`,
+        });
+        continue;
+      }
+      if (outcome.conflict) {
+        fallbacks.push({
+          code: 'conflict',
+          detail: `${reference.filePath}:${reference.startLine} 与源码不一致，已按源码修正`,
+        });
+        anchorConflicts.push({
+          filePath: outcome.reference.filePath,
+          symbol: outcome.reference.symbol,
+          conflict: {
+            kind: 'anchor_offset',
+            accelerated: {
+              source: 'codegraph',
+              location: `${reference.filePath}:${reference.startLine}`,
+              claim: `${reference.symbol ?? '符号'} 位于第 ${reference.startLine} 行（codegraph）`,
+            },
+            truth: {
+              location: `${outcome.reference.filePath}:${outcome.reference.startLine}`,
+              fact:
+                outcome.reference.snippet.split('\n')[0]?.trim() ??
+                `${reference.symbol ?? '符号'} 实际位置`,
+            },
+            winner: 'static_truth',
+            reason: '锚点与源码不一致，已按源码修正（static_truth_wins）',
+          },
+        });
+      }
+      anchored.push(outcome.reference);
     }
-    pathsUsed.add('source');
-    const outcome = verifyAnchor(fs, options.repoRoot, reference);
-    if (outcome === undefined) {
-      fallbacks.push({
-        code: 'conflict',
-        detail: `锚点校验失败：${reference.filePath}:${reference.startLine}（文件缺失或符号不在附近）`,
-      });
-      continue;
-    }
-    if (outcome.conflict) {
-      fallbacks.push({
-        code: 'conflict',
-        detail: `${reference.filePath}:${reference.startLine} 与源码不一致，已按源码修正`,
-      });
-    }
-    anchored.push(outcome.reference);
+    return anchored;
+  };
+
+  let anchored: Reference[] = candidates;
+  if (mode.effectiveMode === 'verify') {
+    anchored = anchorAll(candidates);
   }
 
-  // —— 高风险升级（FR-007：即使 CodeGraph 已给出结果）——
-  // 引用级检测对代码与配置文件生效，纯文档不触发（文档里提到
-  // "生成代码"等词不是代码声明）
+  // —— 引用级高风险（M1 语义保留）：fast 命中则事后升级并补锚定 ——
   const highRisk =
     detectHighRisk({ keywords: plan.keywords }) ||
     anchored.some(
@@ -208,6 +291,14 @@ export async function investigate(
         }),
     );
   if (highRisk) {
+    if (mode.effectiveMode === 'fast') {
+      mode = withEscalation(
+        mode,
+        'high_risk',
+        '引用级高风险命中（M1 表：动态/反射/配置驱动/生成代码），升级 VERIFY 并补源码锚定',
+      );
+      anchored = anchorAll(candidates);
+    }
     pathsUsed.add('source');
     if (codegraphUsable) {
       fallbacks.push({
@@ -217,12 +308,29 @@ export async function investigate(
     }
   }
 
-  // —— 搜索兜底：无引用时（search → source 链）——
+  // —— 搜索兜底：无源码引用时（search → source 链）——
+  // verify 模式即使有 wiki 命中也继续全链取证；fast 有加速证据即免
   const finalRefs = anchored;
   const needsSearch =
     anchored.length === 0 &&
-    (plan.keywords.length > 0 || plan.symbols.length > 0);
+    (plan.keywords.length > 0 || plan.symbols.length > 0) &&
+    (mode.effectiveMode === 'verify' || wikiEvidence.length === 0);
   if (needsSearch) {
+    // FR-008：fast 下加速源零命中/不可用 → 自动走 VERIFY 底层链
+    if (mode.effectiveMode === 'fast') {
+      mode =
+        codegraphUsable || wiki.state === 'hit'
+          ? withEscalation(
+              mode,
+              'zero_hits',
+              '加速源零命中，自动走 VERIFY 全链',
+            )
+          : withEscalation(
+              mode,
+              'accelerators_unavailable',
+              '加速源不可用（CodeGraph / wiki 均未就绪），自动走 VERIFY 全链',
+            );
+    }
     pathsUsed.add('search');
     pathsUsed.add('source');
     const outcome = await searchPatterns({
@@ -276,13 +384,25 @@ export async function investigate(
   });
   const references = deduped.slice(0, maxRefs);
 
+  // —— findings 汇编（M3：确定性模板，research.md D1）——
+  const findings = resolveFindings({
+    symbols: plan.symbols,
+    references,
+    wikiEvidence,
+    wikiConflicts,
+    anchorConflicts,
+    mode: mode.effectiveMode,
+  });
+
   const durationMs = Math.round(performance.now() - start);
-  const degraded = fallbacks.length > 0;
+  // wiki_missing 是可选层的常态（从未构建），不是本次调查的质量受损——
+  // 记录但不计入 degraded，避免信号贬值；stale/broken 仍算降级
+  const degraded = fallbacks.some((reason) => reason.code !== 'wiki_missing');
   const codes = [...new Set(fallbacks.map((reason) => reason.code))];
   const summary =
-    references.length === 0
+    references.length === 0 && findings.every((f) => f.kind === 'insufficient')
       ? '未找到相关内容'
-      : `${references.length} 处引用${degraded ? `，${fallbacks.length} 次降级（${codes.join('/')}）` : ''} · ${durationMs}ms`;
+      : `${references.length} 处引用，${findings.length} 条结论${degraded ? `，${fallbacks.length} 次降级（${codes.join('/')}）` : ''} · ${durationMs}ms`;
 
   return {
     question,
@@ -293,5 +413,9 @@ export async function investigate(
     summary,
     degraded,
     searchEngine,
+    findings,
+    mode,
   };
 }
+
+export type { EffectiveMode, ModeResolution };

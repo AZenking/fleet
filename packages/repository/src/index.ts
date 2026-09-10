@@ -33,3 +33,8 @@ export * from './wiki/status.js';
 export * from './wiki/updater.js';
 export * from './wiki/generator/skeleton.js';
 export * from './wiki/generator/build.js';
+export * from './evidence/types.js';
+export * from './evidence/rules.js';
+export * from './evidence/confidence.js';
+export * from './evidence/resolver.js';
+export * from './evidence/wiki-source.js';

@@ -81,8 +81,8 @@ function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-/** 拉丁关键词按词边界匹配，避免 perf_hooks 里的 "hook" 这类误报 */
-function matchesKeyword(haystack: string, keyword: string): boolean {
+/** 拉丁关键词按词边界匹配，避免 perf_hooks 里的 "hook" 这类误报（M3 rules.ts 复用） */
+export function matchesKeyword(haystack: string, keyword: string): boolean {
   if (/[\u4e00-\u9fff]/.test(keyword)) {
     return haystack.includes(keyword);
   }

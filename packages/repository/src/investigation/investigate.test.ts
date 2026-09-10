@@ -42,6 +42,7 @@ function hit(overrides: Partial<SymbolHit> = {}): SymbolHit {
 function makeOptions(
   script: Parameters<typeof FakeCodeGraphAdapter>[0],
   files = FILES,
+  mode?: 'auto' | 'fast' | 'verify',
 ) {
   const { fs, repoRoot } = memoryRepo(files);
   return {
@@ -49,6 +50,7 @@ function makeOptions(
     fs,
     adapter: new FakeCodeGraphAdapter(script),
     forceWalkSearch: true,
+    ...(mode !== undefined ? { mode } : {}),
   };
 }
 
@@ -59,12 +61,18 @@ function codes(
 }
 
 describe('investigate 健康路径', () => {
-  it('codegraph 命中 + 源码锚定，无降级', async () => {
+  it('codegraph 命中 + 源码锚定；wiki 缺失仅提示不计降级（M3）', async () => {
     const result = await investigate(
       'targetFunc',
-      makeOptions({ symbol: { ok: true, value: [hit()] } }),
+      makeOptions(
+        { symbol: { ok: true, value: [hit()] } },
+        undefined,
+        'verify',
+      ),
     );
-    expect(result.fallbacks).toEqual([]);
+    expect(result.fallbacks.map((reason) => reason.code)).toEqual([
+      'wiki_missing',
+    ]);
     expect(result.degraded).toBe(false);
     expect(result.pathsUsed).toContain('codegraph');
     expect(result.pathsUsed).toContain('source');
@@ -196,12 +204,14 @@ describe('investigate 故障注入矩阵（宪法原则 I：只降级不失败�
     expect(codes(result.fallbacks)).toContain('empty');
   });
 
-  it('conflict（可修正）：行号漂移 → 按源码修正并记录', async () => {
+  it('conflict（可修正）：行号漂移 → 按源码修正并记录（verify）', async () => {
     const result = await investigate(
       'targetFunc',
-      makeOptions({
-        symbol: { ok: true, value: [hit({ startLine: 6, endLine: 8 })] },
-      }),
+      makeOptions(
+        { symbol: { ok: true, value: [hit({ startLine: 6, endLine: 8 })] } },
+        undefined,
+        'verify',
+      ),
     );
     expect(codes(result.fallbacks)).toContain('conflict');
     const main = result.references.find(
@@ -211,12 +221,16 @@ describe('investigate 故障注入矩阵（宪法原则 I：只降级不失败�
     expect(main?.verified).toBe(true);
   });
 
-  it('conflict（不可修正）：锚点彻底失效 → 丢弃该引用，搜索兜底', async () => {
+  it('conflict（不可修正）：锚点彻底失效 → 丢弃该引用，搜索兜底（verify）', async () => {
     const result = await investigate(
       'targetFunc',
-      makeOptions({
-        symbol: { ok: true, value: [hit({ startLine: 500, endLine: 502 })] },
-      }),
+      makeOptions(
+        {
+          symbol: { ok: true, value: [hit({ startLine: 500, endLine: 502 })] },
+        },
+        undefined,
+        'verify',
+      ),
     );
     expect(codes(result.fallbacks)).toContain('conflict');
     // 引用被丢弃后走搜索兜底，结果仍非空

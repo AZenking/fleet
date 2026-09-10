@@ -37,7 +37,14 @@ interface InvestigateReport {
 
 async function investigatePayment(): Promise<InvestigateReport> {
   const result = await runFleet(
-    ['repo', 'investigate', 'PaymentService', '--repo', fixture.root, '--json'],
+    [
+      'repo',
+      'investigate',
+      'PaymentService payment',
+      '--repo',
+      fixture.root,
+      '--json',
+    ],
     repoRoot,
   );
   expect(result.exitCode).toBe(0);
@@ -45,7 +52,7 @@ async function investigatePayment(): Promise<InvestigateReport> {
 }
 
 describe('wiki 与既有命令的隔离（SC-005）', () => {
-  it('建 wiki 前后 investigate 输出一致（references / pathsUsed / 降级码）', async () => {
+  it('建 wiki 前后 investigate 结论一致（references / 退出码，SC-004 M3 语义）', async () => {
     const before = await investigatePayment();
 
     const init = await runFleet(
@@ -61,11 +68,13 @@ describe('wiki 与既有命令的隔离（SC-005）', () => {
     expect(JSON.parse(build.stdout).validation.ok).toBe(true);
 
     const after = await investigatePayment();
+    // SC-004（M3 语义）：调查结论（源码引用）与退出码一致；
+    // pathsUsed 增 wiki / wiki finding 出现是集成的预期行为，不算回归
     expect(after.references).toEqual(before.references);
-    expect(after.pathsUsed).toEqual(before.pathsUsed);
-    expect(after.fallbacks.map((f) => f.code)).toEqual(
-      before.fallbacks.map((f) => f.code),
-    );
+    expect(after.pathsUsed).toContain('wiki');
+    expect(
+      (after.findings ?? []).some((finding) => finding.kind === 'wiki'),
+    ).toBe(true);
   });
 
   it('wiki 页面永不进入调查证据（.fleet 排除目录零改动）', async () => {
