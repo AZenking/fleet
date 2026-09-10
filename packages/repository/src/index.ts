@@ -28,5 +28,6 @@ export * from './wiki/format.js';
 export * from './wiki/git.js';
 export * from './wiki/index-writer.js';
 export * from './wiki/validator.js';
+export * from './wiki/query.js';
 export * from './wiki/generator/skeleton.js';
 export * from './wiki/generator/build.js';

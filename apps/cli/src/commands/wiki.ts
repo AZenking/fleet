@@ -1,3 +1,4 @@
+import path from 'node:path';
 import type { Command } from 'commander';
 
 import {
@@ -11,7 +12,9 @@ import {
   ExecaWikiGit,
   buildWiki,
   initWiki,
+  queryWiki,
   wikiRootOf,
+  WikiMissingError,
 } from '@fleet/repository';
 
 import { resolveRepoRoot } from './repo.js';
@@ -85,6 +88,78 @@ export function registerWikiCommand(program: Command): void {
       });
       print(options.json === true, result, renderWriteResultHuman(result));
     });
+
+  wiki
+    .command('query <question>')
+    .description('在 wiki 中检索问题（确定性全文检索，无向量库）')
+    .option('--repo <path>', '目标仓库路径')
+    .option('--json', '结构化输出')
+    .option('--max-hits <number>', '命中条数上限（默认 10）', (value) =>
+      Number.parseInt(value, 10),
+    )
+    .action(
+      async (
+        question: string,
+        options: {
+          repo?: string;
+          json?: boolean;
+          maxHits?: number;
+        },
+      ) => {
+        const repoRoot = resolveRepoRoot(options.repo);
+        try {
+          const git = new ExecaWikiGit();
+          const result = await queryWiki(question, {
+            repoRoot,
+            fs: new RealFileSystem(),
+            git,
+            maxHits: options.maxHits,
+          });
+          // stale 轻量检查（页面级明细归 status）：HEAD ≠ index 锚点即警告
+          const staleWarning = await lightStaleWarning(repoRoot, git);
+          if (staleWarning !== undefined) {
+            console.error(`⚠ ${staleWarning}`);
+          }
+          emitEvent('wiki.query.completed', {
+            repoRoot,
+            question,
+            hitCount: result.hits.length,
+            engine: result.engine,
+            durationMs: result.durationMs,
+          });
+          print(options.json === true, result, renderQueryHuman(result));
+        } catch (error) {
+          if (error instanceof WikiMissingError) {
+            console.error(error.message);
+            process.exitCode = 1;
+            return;
+          }
+          throw error;
+        }
+      },
+    );
+}
+
+async function lightStaleWarning(
+  repoRoot: string,
+  git: ExecaWikiGit,
+): Promise<string | undefined> {
+  const head = await git.headSha(repoRoot);
+  if (!head.ok) {
+    return undefined;
+  }
+  const indexRaw = new RealFileSystem().readFileOptional(
+    path.join(wikiRootOf(repoRoot), 'index.md'),
+  );
+  if (indexRaw === undefined) {
+    return undefined;
+  }
+  const match = /generated_from: ([0-9a-f]{7,40})/.exec(indexRaw);
+  const anchored = match?.[1];
+  if (anchored !== undefined && anchored !== head.value) {
+    return `wiki 已过期（锚点 ${anchored.slice(0, 8)} ≠ HEAD ${head.value.slice(0, 8)}）——建议 fleet wiki update`;
+  }
+  return undefined;
 }
 
 function emitEvent(type: string, payload: Record<string, unknown>): void {
@@ -130,5 +205,42 @@ export function renderWriteResultHuman(result: {
       lines.push(`- ${page}`);
     }
   }
+  return lines.join('\n');
+}
+
+function renderQueryHuman(result: {
+  question: string;
+  hits: Array<{
+    pagePath: string;
+    title: string;
+    snippet: string;
+    score: number;
+    scoreBreakdown: { title: number; heading: number; body: number };
+  }>;
+  suggestions: string[];
+  engine: string;
+  durationMs: number;
+}): string {
+  const lines = [`问题：${result.question}`];
+  if (result.hits.length === 0) {
+    lines.push('（wiki 中未找到相关内容）');
+    if (result.suggestions.length > 0) {
+      lines.push('可用主题：');
+      for (const suggestion of result.suggestions) {
+        lines.push(`- ${suggestion}`);
+      }
+    }
+  } else {
+    result.hits.forEach((hit, index) => {
+      lines.push(
+        `${String(index + 1).padStart(2)}. [${hit.title}] ${hit.pagePath}（得分 ${hit.score} = 标题${hit.scoreBreakdown.title} + 小节${hit.scoreBreakdown.heading} + 正文${hit.scoreBreakdown.body}）`,
+      );
+      lines.push(`    ${hit.snippet}`);
+    });
+  }
+  lines.push('─'.repeat(38));
+  lines.push(
+    `检索引擎：${result.engine}${result.engine === 'walk' ? '（内置遍历）' : ''} · ${result.durationMs}ms`,
+  );
   return lines.join('\n');
 }

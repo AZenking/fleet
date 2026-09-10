@@ -75,9 +75,9 @@ front matter 三要素齐全、index 收录全部页面、反引号路径 100% �
 **Independent Test**: quickstart B 段——命中 ≤2s（SC-006）、空结果 +
 suggestions 退出码 0、wiki 缺失退出码 1 + 修复指引（FR-005/006）
 
-- [ ] T014 [P] [US2] 实现检索 `packages/repository/src/wiki/query.ts`：关键词提取（停用词过滤 + 标点/空格分词 + 中文 bigram）→ 复用 M1 `searchPatterns`（repoRoot 指向 wiki 根，rg→walk 降级链照常）→ 页面聚合排序（标题×3 + 小节标题×2 + 正文命中行×1，同分按路径字典序）→ WikiQueryResult（含 scoreBreakdown）；suggestions 从 index 页面标题全集提取（research.md D6）
-- [ ] T015 [US2] query 状态语义与 CLI 子命令 `apps/cli/src/commands/wiki.ts` 扩展：wiki 缺失/index 损坏 → 退出码 1 + 修复指引；stale → 轻量检查（git headSha ≠ 最新页 generated_from 即警告，页面级明细归 US3 status）+ 照常检索；空结果 → suggestions + 退出码 0；`--max-hits`（默认 10）/`--json`/`--repo`；`wiki.query.completed` 事件（依赖 T014、T012 的命令骨架）
-- [ ] T016 [US2] US2 测试：单元（排序确定性——同输入同序、中文 bigram 命中、scoreBreakdown 正确、rg 缺失 forceWalk 降级仍出结果）+ e2e（tmp 夹具 build 后：命中/空结果/缺 wiki 三态退出码矩阵、--json 结构断言、命中 ≤2s SC-006 计时断言）
+- [x] T014 [P] [US2] 实现检索 `packages/repository/src/wiki/query.ts`：关键词提取（停用词过滤 + 标点/空格分词 + 中文 bigram）→ 复用 M1 `searchPatterns`（repoRoot 指向 wiki 根，rg→walk 降级链照常）→ 页面聚合排序（标题×3 + 小节标题×2 + 正文命中行×1，同分按路径字典序）→ WikiQueryResult（含 scoreBreakdown）；suggestions 从 index 页面标题全集提取（research.md D6）
+- [x] T015 [US2] query 状态语义与 CLI 子命令 `apps/cli/src/commands/wiki.ts` 扩展：wiki 缺失/index 损坏 → 退出码 1 + 修复指引；stale → 轻量检查（git headSha ≠ 最新页 generated_from 即警告，页面级明细归 US3 status）+ 照常检索；空结果 → suggestions + 退出码 0；`--max-hits`（默认 10）/`--json`/`--repo`；`wiki.query.completed` 事件（依赖 T014、T012 的命令骨架）
+- [x] T016 [US2] US2 测试：单元（排序确定性——同输入同序、中文 bigram 命中、scoreBreakdown 正确、rg 缺失 forceWalk 降级仍出结果）+ e2e（tmp 夹具 build 后：命中/空结果/缺 wiki 三态退出码矩阵、--json 结构断言、命中 ≤2s SC-006 计时断言）
 
 **Checkpoint**: Wiki 的价值出口打通——Token 效率路径成立
 

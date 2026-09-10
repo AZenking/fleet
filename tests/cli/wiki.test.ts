@@ -146,3 +146,91 @@ describe('fleet wiki init / build（US1 / SC-001）', () => {
     expect(index).toContain('[术语表](glossary.md)');
   });
 });
+
+describe('fleet wiki query（US2 / SC-006 + 状态语义矩阵）', () => {
+  it('命中：相关页面 + scoreBreakdown，≤2s（SC-006）', async () => {
+    const result = await runFleet([
+      'wiki',
+      'query',
+      'investigateFixture 夹具仓库智能',
+      '--repo',
+      fixture.root,
+      '--json',
+    ]);
+    expect(result.exitCode).toBe(0);
+    const report = JSON.parse(result.stdout);
+    expect(report.engine).toBe('ripgrep');
+    expect(report.durationMs).toBeLessThanOrEqual(2_000);
+    const topPaths = report.hits.map(
+      (hit: { pagePath: string }) => hit.pagePath,
+    );
+    expect(topPaths).toContain('domains/repository.md');
+    expect(topPaths).not.toContain('index.md');
+    expect(report.hits[0].scoreBreakdown).toBeDefined();
+    expect(result.stderr).toContain('wiki.query.completed');
+  });
+
+  it('无命中：空结果 + 主题建议，退出码 0（FR-006）', async () => {
+    const result = await runFleet([
+      'wiki',
+      'query',
+      'zzz不存在的主题xyz',
+      '--repo',
+      fixture.root,
+      '--json',
+    ]);
+    expect(result.exitCode).toBe(0);
+    const report = JSON.parse(result.stdout);
+    expect(report.hits).toEqual([]);
+    expect(report.suggestions.length).toBeGreaterThan(0);
+  });
+
+  it('文本模式：问题与命中行', async () => {
+    const result = await runFleet([
+      'wiki',
+      'query',
+      '夹具核心包',
+      '--repo',
+      fixture.root,
+    ]);
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toContain('问题：');
+    expect(result.stdout).toContain('domains/core.md');
+  });
+
+  it('wiki 缺失：退出码 1 + 修复指引（D9 矩阵）', async () => {
+    const empty = await createWikiFixture();
+    try {
+      const result = await runFleet([
+        'wiki',
+        'query',
+        '任意问题',
+        '--repo',
+        empty.root,
+        '--json',
+      ]);
+      expect(result.exitCode).toBe(1);
+      expect(result.stderr).toContain('fleet wiki init');
+    } finally {
+      await empty.destroy();
+    }
+  });
+
+  it('stale：警告后照常检索，退出码 0（US2 场景 3）', async () => {
+    await fixture.commit(
+      { 'packages/core/src/extra.ts': 'export const EXTRA = 1;\n' },
+      'fixture: touch core',
+    );
+    const result = await runFleet([
+      'wiki',
+      'query',
+      '夹具仓库智能',
+      '--repo',
+      fixture.root,
+      '--json',
+    ]);
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr).toContain('wiki 已过期');
+    expect(JSON.parse(result.stdout).hits.length).toBeGreaterThan(0);
+  });
+});
