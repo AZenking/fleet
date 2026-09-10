@@ -91,10 +91,10 @@ suggestions 退出码 0、wiki 缺失退出码 1 + 修复指引（FR-005/006）
 100% 准确（SC-004）；update 受影响页 100% 刷新、无关页逐字节不变
 （SC-003）；mixed 页人工区保留 + .backup 出现（FR-009）
 
-- [ ] T017 [P] [US3] 实现 stale 判定 `packages/repository/src/wiki/status.ts`：headSha + `diff --name-only <generated_from> HEAD` → 页面级 stale（changed files ∩ scope 前缀匹配）→ WikiStatus（state/aheadCommits/changedFiles/pages 明细/fullRebuildRecommended>70%）；generated_from 缺失或非 git → unknown，不猜测（research.md D4，SC-004 纯集合运算；依赖 T005）
-- [ ] T018 [US3] 实现增量更新 `packages/repository/src/wiki/updater.ts`：受影响页按 origin 分派——generated 整页重算 / mixed 仅围栏内重写（写入前备份至 `.fleet/wiki/.backup/`，滚动保留一代）/ manual 跳过并提示；未受影响页零触碰；index 同步；UpdateResult（依赖 T008 单页生成、T017）
-- [ ] T019 [US3] CLI status/update 子命令 `apps/cli/src/commands/wiki.ts` 扩展：status 恒退出码 0（fresh/stale/unknown 均有效）+ fullRebuild 建议；update 退出码 0/1 + manual 页跳过提示；`wiki.status/update.completed` 事件（依赖 T017、T018）
-- [ ] T020 [US3] US3 测试（SC-003/SC-004 主证据，e2e `tests/cli/wiki.test.ts` 扩展）：tmp 夹具基线 build → 改 `packages/repository` 下文件提交 → status 断言页面级命中（domains/repository、overview）/未命中（domains/core）→ update 后 `git diff` 断言受影响页 100% 刷新、无关页 0 字节变化；mixed 页人工区逐字节保留 + .backup 出现；manual 页跳过；fresh/stale/unknown 三态矩阵（非 git 夹具）
+- [x] T017 [P] [US3] 实现 stale 判定 `packages/repository/src/wiki/status.ts`：headSha + `diff --name-only <generated_from> HEAD` → 页面级 stale（changed files ∩ scope 前缀匹配）→ WikiStatus（state/aheadCommits/changedFiles/pages 明细/fullRebuildRecommended>70%）；generated_from 缺失或非 git → unknown，不猜测（research.md D4，SC-004 纯集合运算；依赖 T005）
+- [x] T018 [US3] 实现增量更新 `packages/repository/src/wiki/updater.ts`：受影响页按 origin 分派——generated 整页重算 / mixed 仅围栏内重写（写入前备份至 `.fleet/wiki/.backup/`，滚动保留一代）/ manual 跳过并提示；未受影响页零触碰；index 同步；UpdateResult（依赖 T008 单页生成、T017）
+- [x] T019 [US3] CLI status/update 子命令 `apps/cli/src/commands/wiki.ts` 扩展：status 恒退出码 0（fresh/stale/unknown 均有效）+ fullRebuild 建议；update 退出码 0/1 + manual 页跳过提示；`wiki.status/update.completed` 事件（依赖 T017、T018）
+- [x] T020 [US3] US3 测试（SC-003/SC-004 主证据，e2e `tests/cli/wiki.test.ts` 扩展）：tmp 夹具基线 build → 改 `packages/repository` 下文件提交 → status 断言页面级命中（domains/repository、overview）/未命中（domains/core）→ update 后 `git diff` 断言受影响页 100% 刷新、无关页 0 字节变化；mixed 页人工区逐字节保留 + .backup 出现；manual 页跳过；fresh/stale/unknown 三态矩阵（非 git 夹具）
 
 **Checkpoint**: 持久层生命周期闭环——M2 全部故事独立可用
 

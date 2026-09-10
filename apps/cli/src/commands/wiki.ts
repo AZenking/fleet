@@ -11,8 +11,10 @@ import {
 import {
   ExecaWikiGit,
   buildWiki,
+  computeWikiStatus,
   initWiki,
   queryWiki,
+  updateWiki,
   wikiRootOf,
   WikiMissingError,
 } from '@fleet/repository';
@@ -138,6 +140,61 @@ export function registerWikiCommand(program: Command): void {
         }
       },
     );
+
+  wiki
+    .command('status')
+    .description('报告 wiki 新鲜度（页面级 stale 判定，纯集合运算）')
+    .option('--repo <path>', '目标仓库路径')
+    .option('--json', '结构化输出')
+    .action(async (options: WikiCommandOptions) => {
+      const repoRoot = resolveRepoRoot(options.repo);
+      const status = await computeWikiStatus({
+        repoRoot,
+        fs: new RealFileSystem(),
+        git: new ExecaWikiGit(),
+      });
+      emitEvent('wiki.status.completed', {
+        repoRoot,
+        state: status.state,
+        stalePages: status.pages.filter((page) => page.stale).length,
+      });
+      print(options.json === true, status, renderStatusHuman(status));
+    });
+
+  wiki
+    .command('update')
+    .description('增量重算受影响页面（manual/mixed 保护，未受影响页零触碰）')
+    .option('--repo <path>', '目标仓库路径')
+    .option('--json', '结构化输出')
+    .action(async (options: WikiCommandOptions) => {
+      const repoRoot = resolveRepoRoot(options.repo);
+      try {
+        const result = await updateWiki({
+          repoRoot,
+          fs: new RealFileSystem(),
+          git: new ExecaWikiGit(),
+        });
+        emitEvent('wiki.update.completed', {
+          repoRoot,
+          pagesWritten: result.pagesWritten.length,
+          pagesSkipped: result.pagesSkipped.length,
+          durationMs: result.durationMs,
+        });
+        const human = renderWriteResultHuman(result);
+        print(
+          options.json === true,
+          result,
+          result.note !== undefined ? `${human}\nℹ ${result.note}` : human,
+        );
+      } catch (error) {
+        if (error instanceof WikiMissingError) {
+          console.error(error.message);
+          process.exitCode = 1;
+          return;
+        }
+        throw error;
+      }
+    });
 }
 
 async function lightStaleWarning(
@@ -204,6 +261,57 @@ export function renderWriteResultHuman(result: {
     for (const page of result.pagesSkipped) {
       lines.push(`- ${page}`);
     }
+  }
+  return lines.join('\n');
+}
+
+function renderStatusHuman(status: {
+  exists: boolean;
+  state: string;
+  headSha?: string;
+  generatedFrom?: string;
+  aheadCommits?: number;
+  changedFiles: string[];
+  pages: Array<{
+    path: string;
+    origin: string;
+    stale: boolean;
+    matchedScope: string[];
+  }>;
+  fullRebuildRecommended: boolean;
+}): string {
+  if (!status.exists) {
+    return 'wiki 不存在——先运行 fleet wiki init && fleet wiki build';
+  }
+  const lines: string[] = [`状态：${status.state}`];
+  if (status.generatedFrom !== undefined) {
+    lines.push(
+      `锚点：${status.generatedFrom.slice(0, 8)}${
+        status.headSha !== undefined
+          ? ` → HEAD ${status.headSha.slice(0, 8)}`
+          : ''
+      }${status.aheadCommits !== undefined ? `（落后 ${status.aheadCommits} 提交）` : ''}`,
+    );
+  }
+  if (status.changedFiles.length > 0) {
+    lines.push(`变化文件（${status.changedFiles.length}）：`);
+    for (const file of status.changedFiles.slice(0, 20)) {
+      lines.push(`- ${file}`);
+    }
+  }
+  const stalePages = status.pages.filter((page) => page.stale);
+  if (stalePages.length > 0) {
+    lines.push('受影响页面：');
+    for (const page of stalePages) {
+      lines.push(
+        `- ${page.path}（${page.origin}，命中 ${page.matchedScope.join('、') || '.'}）`,
+      );
+    }
+  } else {
+    lines.push('受影响页面：无');
+  }
+  if (status.fullRebuildRecommended) {
+    lines.push('ℹ 受影响面过大——建议 fleet wiki build 全量重建');
   }
   return lines.join('\n');
 }

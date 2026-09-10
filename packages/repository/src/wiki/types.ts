@@ -120,6 +120,8 @@ export const wikiWriteResultSchema = z.strictObject({
   /** mixed 页重写前的备份路径（.fleet/wiki/.backup/，滚动一代） */
   backups: z.array(z.string()),
   durationMs: z.number().int().nonnegative(),
+  /** 非失败性说明（如 update 在 unknown 锚点下的提示） */
+  note: z.string().optional(),
 });
 export type BuildResult = z.infer<typeof wikiWriteResultSchema>;
 export type UpdateResult = BuildResult;

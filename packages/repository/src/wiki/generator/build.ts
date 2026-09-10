@@ -6,17 +6,21 @@ import { loadWikiPages, serializeWikiPage, wikiRootOf } from '../format.js';
 import type { WikiGitPort } from '../git.js';
 import { INDEX_PATH, renderIndexNav } from '../index-writer.js';
 import { validateWiki } from '../validator.js';
-import { WIKI_BACKUP_DIR, type BuildResult, type WikiPage } from '../types.js';
-import { initWiki, scanRepo, type PageSpec } from './skeleton.js';
+import { type BuildResult, type WikiPage } from '../types.js';
+import {
+  initWiki,
+  scanRepo,
+  skeletonSpecs,
+  type PageSpec,
+} from './skeleton.js';
 
 /**
  * fleet wiki build 编排（FR-002）：
- * init 兜底 → 事实提取 → 页面写入（幂等）→ index 同步 → 校验。
+ * init 兜底 → 事实提取（仓库扫描 + 静态骨架 specs）→ 页面写入（幂等）
+ * → index 同步 → 校验。
  *
- * 幂等语义：同 sha 且围栏内容/scope 未变 → pagesUnchanged（不触碰
- * 文件，updated_at 不动）；内容或锚点变化 → 重写并刷新元数据。
- * manual 页面（用户手写同路径）完全尊重，记 pagesSkipped。
- * mixed 页重写前备份至 .backup/（滚动一代，FR-009）。
+ * 写入助手（writeSpecPage / syncIndexPage）与 updater 共享——增量更新
+ * 与全量构建走同一条合并路径（FR-009 的保护逻辑只有一份实现）。
  */
 
 export interface BuildOptions {
@@ -28,6 +32,13 @@ export interface BuildOptions {
   now?: () => string;
 }
 
+export interface WriteCounters {
+  pagesWritten: string[];
+  pagesUnchanged: string[];
+  pagesSkipped: string[];
+  backups: string[];
+}
+
 export async function buildWiki(options: BuildOptions): Promise<BuildResult> {
   const startedAt = Date.now();
   const { repoRoot, fs } = options;
@@ -37,96 +48,122 @@ export async function buildWiki(options: BuildOptions): Promise<BuildResult> {
 
   initWiki(fs, repoRoot, wikiRoot, now);
 
-  const headOutcome = options.git
-    ? await options.git.headSha(repoRoot)
-    : { ok: false as const, error: '未注入 git（视为不可锚定）' };
-  const headSha = headOutcome.ok ? headOutcome.value : undefined;
-
-  const scan = scanRepo(fs, repoRoot);
-  const specsByPath = new Map<string, PageSpec>(
-    scan.specs.map((spec) => [spec.path, spec]),
-  );
-
+  const headSha = await resolveHeadSha(options.git, repoRoot);
+  const specs = [...scanRepo(fs, repoRoot).specs, ...skeletonSpecs()];
   const loaded = loadWikiPages(fs, wikiRoot);
   const pagesByPath = new Map<string, WikiPage>(
     loaded.pages.map((page) => [page.path, page]),
   );
 
-  const pagesWritten: string[] = [];
-  const pagesUnchanged: string[] = [];
-  const pagesSkipped: string[] = [];
-  const backups: string[] = [];
+  const counters: WriteCounters = {
+    pagesWritten: [],
+    pagesUnchanged: [],
+    pagesSkipped: [],
+    backups: [],
+  };
 
-  for (const [specPath, spec] of specsByPath) {
-    const existing = pagesByPath.get(specPath);
-    if (existing !== undefined && existing.origin === 'manual') {
-      // 用户手写了同路径页面：尊重人工内容，不生成（FR-009 精神）
-      pagesSkipped.push(specPath);
-      continue;
-    }
-    const contentSame =
-      existing !== undefined &&
-      existing.generatedContent === spec.content &&
-      JSON.stringify(existing.metadata.scope) === JSON.stringify(spec.scope);
-    const anchorSame =
-      headSha === undefined || existing?.metadata.generated_from === headSha;
-    if (!force && contentSame && anchorSame && existing !== undefined) {
-      pagesUnchanged.push(specPath);
-      continue;
-    }
-    if (existing !== undefined && existing.origin === 'mixed') {
-      backups.push(backupPage(fs, wikiRoot, existing));
-    }
-    const merged: WikiPage = {
-      path: specPath,
-      section: spec.section,
-      metadata: {
-        title: spec.title,
-        ...(headSha !== undefined ? { generated_from: headSha } : {}),
-        updated_at: now(),
-        scope: spec.scope,
-      },
-      generatedContent: spec.content,
-      manualBefore: existing?.manualBefore ?? '\n',
-      manualAfter: existing?.manualAfter ?? '\n',
-      origin: existing?.origin ?? 'generated',
-    };
-    fs.writeFile(path.join(wikiRoot, specPath), serializeWikiPage(merged));
-    pagesWritten.push(specPath);
+  for (const spec of specs) {
+    writeSpecPage(
+      fs,
+      wikiRoot,
+      spec,
+      pagesByPath.get(spec.path),
+      headSha,
+      now,
+      force,
+      counters,
+    );
   }
 
-  // index 同步（以写入后的页面全集为准）
-  await syncIndex(fs, wikiRoot, headSha, now, force, {
-    pagesWritten,
-    pagesUnchanged,
-  });
+  syncIndexPage(fs, wikiRoot, headSha, now, force, counters);
 
-  // 校验以磁盘终态为准
   const reloaded = loadWikiPages(fs, wikiRoot);
   const validation = validateWiki(fs, repoRoot, wikiRoot, reloaded);
 
   return {
-    pagesWritten,
-    pagesUnchanged,
-    pagesSkipped,
+    pagesWritten: counters.pagesWritten,
+    pagesUnchanged: counters.pagesUnchanged,
+    pagesSkipped: counters.pagesSkipped,
     validation,
-    backups,
+    backups: counters.backups,
     durationMs: Date.now() - startedAt,
   };
 }
 
-async function syncIndex(
+async function resolveHeadSha(
+  git: WikiGitPort | undefined,
+  repoRoot: string,
+): Promise<string | undefined> {
+  if (git === undefined) {
+    return undefined;
+  }
+  const head = await git.headSha(repoRoot);
+  return head.ok ? head.value : undefined;
+}
+
+/**
+ * 单页合并写入（build 与 update 共享）：
+ * - manual 页：跳过（尊重人工内容）
+ * - 内容与锚点均未变：unchanged（不触碰文件，updated_at 不动）
+ * - mixed 页：围栏内重写、围栏外逐字节保留；写前备份（滚动一代）
+ */
+export function writeSpecPage(
+  fs: FileSystemPort,
+  wikiRoot: string,
+  spec: PageSpec,
+  existing: WikiPage | undefined,
+  headSha: string | undefined,
+  now: () => string,
+  force: boolean,
+  counters: WriteCounters,
+): void {
+  if (existing !== undefined && existing.origin === 'manual') {
+    counters.pagesSkipped.push(spec.path);
+    return;
+  }
+  const contentSame =
+    existing !== undefined &&
+    existing.generatedContent === spec.content &&
+    JSON.stringify(existing.metadata.scope) === JSON.stringify(spec.scope);
+  const anchorSame =
+    headSha === undefined || existing?.metadata.generated_from === headSha;
+  if (!force && contentSame && anchorSame && existing !== undefined) {
+    counters.pagesUnchanged.push(spec.path);
+    return;
+  }
+  if (existing !== undefined && existing.origin === 'mixed') {
+    counters.backups.push(backupPage(fs, wikiRoot, existing));
+  }
+  const merged: WikiPage = {
+    path: spec.path,
+    section: spec.section,
+    metadata: {
+      title: spec.title,
+      ...(headSha !== undefined ? { generated_from: headSha } : {}),
+      updated_at: now(),
+      scope: spec.scope,
+    },
+    generatedContent: spec.content,
+    manualBefore: existing?.manualBefore ?? '\n',
+    manualAfter: existing?.manualAfter ?? '\n',
+    origin: existing?.origin ?? 'generated',
+  };
+  fs.writeFile(path.join(wikiRoot, spec.path), serializeWikiPage(merged));
+  counters.pagesWritten.push(spec.path);
+}
+
+/** index 导航同步（写入后页面全集 → index.md，同样幂等/备份） */
+export function syncIndexPage(
   fs: FileSystemPort,
   wikiRoot: string,
   headSha: string | undefined,
   now: () => string,
   force: boolean,
-  counters: { pagesWritten: string[]; pagesUnchanged: string[] },
-): Promise<void> {
+  counters: WriteCounters,
+): void {
   const loaded = loadWikiPages(fs, wikiRoot);
-  const navPages = loaded.pages;
-  const existingIndex = navPages.find((page) => page.path === INDEX_PATH);
-  const navContent = renderIndexNav(navPages);
+  const existingIndex = loaded.pages.find((page) => page.path === INDEX_PATH);
+  const navContent = renderIndexNav(loaded.pages);
   const contentSame = existingIndex?.generatedContent === navContent;
   const anchorSame =
     headSha === undefined || existingIndex?.metadata.generated_from === headSha;
@@ -135,12 +172,7 @@ async function syncIndex(
     return;
   }
   if (existingIndex !== undefined && existingIndex.origin === 'mixed') {
-    // index 的围栏外人工内容同样保护（备份由调用方语义覆盖——此处
-    // 轻量：index 通常无人工区；有则备份）
-    fs.writeFile(
-      path.join(wikiRoot, WIKI_BACKUP_DIR, INDEX_PATH),
-      serializeWikiPage(existingIndex),
-    );
+    counters.backups.push(backupPage(fs, wikiRoot, existingIndex));
   }
   const indexPage: WikiPage = {
     path: INDEX_PATH,
@@ -160,14 +192,40 @@ async function syncIndex(
   counters.pagesWritten.push(INDEX_PATH);
 }
 
+/** 无 spec 的受影响页：仅刷新锚点元数据（内容无生成来源可重算） */
+export function refreshAnchorOnly(
+  fs: FileSystemPort,
+  wikiRoot: string,
+  page: WikiPage,
+  headSha: string | undefined,
+  now: () => string,
+  counters: WriteCounters,
+): void {
+  if (page.origin === 'mixed') {
+    counters.backups.push(backupPage(fs, wikiRoot, page));
+  }
+  const refreshed: WikiPage = {
+    ...page,
+    metadata: {
+      ...page.metadata,
+      ...(headSha !== undefined ? { generated_from: headSha } : {}),
+      updated_at: now(),
+    },
+  };
+  fs.writeFile(path.join(wikiRoot, page.path), serializeWikiPage(refreshed));
+  counters.pagesWritten.push(page.path);
+}
+
 function backupPage(
   fs: FileSystemPort,
   wikiRoot: string,
   page: WikiPage,
 ): string {
-  const backupPath = path.join(WIKI_BACKUP_DIR, page.path);
+  // 备份落 wiki 相对 .backup/ 下（WIKI_BACKUP_DIR 是仓库级路径，
+  // 直接 join wikiRoot 会产生双重前缀）
+  const backupPath = path.join('.backup', page.path);
   fs.writeFile(path.join(wikiRoot, backupPath), serializeWikiPage(page));
   return backupPath;
 }
 
-export { initWiki, scanRepo };
+export { initWiki, scanRepo, skeletonSpecs };

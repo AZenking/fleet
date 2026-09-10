@@ -64,6 +64,47 @@ const SECTION_READMES: Array<{ dir: string; title: string; purpose: string }> =
   ];
 
 /**
+ * 静态骨架页规格（init 与 build 共用，保证 build 会为其补锚点）。
+ * scope 取 `.fleet/wiki`：内容不依赖仓库事实，随 wiki 自身演进，
+ * 不因任意仓库提交被判 stale（research.md D3 语义边界）。
+ */
+export function skeletonSpecs(): PageSpec[] {
+  return [
+    {
+      path: 'decisions/DECISION-TEMPLATE.md',
+      section: 'decisions',
+      title: '决策模板',
+      scope: ['.fleet/wiki'],
+      content: [
+        '# ADR-NNN：<决策标题>',
+        '',
+        '- 状态：提议 / 已接受 / 已取代',
+        '- 日期：YYYY-MM-DD',
+        '',
+        '## 背景',
+        '',
+        '## 决策',
+        '',
+        '## 后果',
+      ].join('\n'),
+    },
+    {
+      path: 'glossary.md',
+      section: 'glossary',
+      title: '术语表',
+      scope: ['.fleet/wiki'],
+      content: [
+        '# 术语表',
+        '',
+        '| 术语 | 含义 |',
+        '|---|---|',
+        '| （待补充） | 术语定义请补充在围栏外，或直接修改本表 |',
+      ].join('\n'),
+    },
+  ];
+}
+
+/**
  * fleet wiki init：幂等建立骨架（FR-001）——index + 四分区 + glossary。
  * 只补缺失文件；已有内容与人工页面原样保留。
  */
@@ -106,54 +147,26 @@ export function initWiki(
       `${readme.dir}/README.md`,
       manualPageRaw(
         readme.title,
-        ['.'],
+        ['.fleet/wiki'],
         [`# ${readme.title}`, '', readme.purpose, ''].join('\n'),
       ),
     );
   }
 
-  ensure(
-    'decisions/DECISION-TEMPLATE.md',
-    pageRaw({
-      path: 'decisions/DECISION-TEMPLATE.md',
-      section: 'decisions',
-      title: '决策模板',
-      scope: ['.'],
-      generatedContent: [
-        '# ADR-NNN：<决策标题>',
-        '',
-        '- 状态：提议 / 已接受 / 已取代',
-        '- 日期：YYYY-MM-DD',
-        '',
-        '## 背景',
-        '',
-        '## 决策',
-        '',
-        '## 后果',
-      ].join('\n'),
-      generatedFrom: undefined,
-      now,
-    }),
-  );
-
-  ensure(
-    'glossary.md',
-    pageRaw({
-      path: 'glossary.md',
-      section: 'glossary',
-      title: '术语表',
-      scope: ['.'],
-      generatedContent: [
-        '# 术语表',
-        '',
-        '| 术语 | 含义 |',
-        '|---|---|',
-        '| （待补充） | 术语定义请补充在围栏外，或直接修改本表 |',
-      ].join('\n'),
-      generatedFrom: undefined,
-      now,
-    }),
-  );
+  for (const spec of skeletonSpecs()) {
+    ensure(
+      spec.path,
+      pageRaw({
+        path: spec.path,
+        section: spec.section,
+        title: spec.title,
+        scope: spec.scope,
+        generatedContent: spec.content,
+        generatedFrom: undefined,
+        now,
+      }),
+    );
+  }
 
   return { created };
 }

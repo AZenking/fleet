@@ -234,3 +234,147 @@ describe('fleet wiki query（US2 / SC-006 + 状态语义矩阵）', () => {
     expect(JSON.parse(result.stdout).hits.length).toBeGreaterThan(0);
   });
 });
+
+describe('fleet wiki status / update（US3 / SC-003 / SC-004）', () => {
+  // 前置：query 段最后一次测试已提交 packages/core/src/extra.ts，
+  // wiki 锚点因此落后（stale 基线）
+
+  it('status：页面级判定 100% 准确（SC-004）', async () => {
+    const result = await runFleet([
+      'wiki',
+      'status',
+      '--repo',
+      fixture.root,
+      '--json',
+    ]);
+    expect(result.exitCode).toBe(0);
+    const status = JSON.parse(result.stdout);
+    expect(status.state).toBe('stale');
+    expect(status.changedFiles).toContain('packages/core/src/extra.ts');
+    const byPath = new Map(
+      status.pages.map((page: { path: string; stale: boolean }) => [
+        page.path,
+        page.stale,
+      ]),
+    );
+    expect(byPath.get('domains/core.md')).toBe(true);
+    expect(byPath.get('architecture/overview.md')).toBe(true);
+    expect(byPath.get('domains/repository.md')).toBe(false);
+    // 静态骨架页不受仓库提交影响（scope .fleet/wiki）
+    expect(byPath.get('glossary.md')).toBe(false);
+    expect(result.stderr).toContain('wiki.status.completed');
+  });
+
+  it('status：fresh 态退出码仍为 0（fresh/stale/unknown 均有效）', async () => {
+    await runFleet(['wiki', 'update', '--repo', fixture.root, '--json']);
+    const result = await runFleet([
+      'wiki',
+      'status',
+      '--repo',
+      fixture.root,
+      '--json',
+    ]);
+    expect(result.exitCode).toBe(0);
+    expect(JSON.parse(result.stdout).state).toBe('fresh');
+  });
+
+  it('update：受影响页刷新、无关页逐字节不变（SC-003）', async () => {
+    // 构造新的受影响变更：触碰 repository 包
+    await fixture.commit(
+      {
+        'packages/repository/src/investigate.ts':
+          'export function investigateFixture2() {}\n',
+      },
+      'fixture: touch repository',
+    );
+    const repositoryBefore = await fixture.read(
+      '.fleet/wiki/domains/repository.md',
+    );
+    const coreBefore = await fixture.read('.fleet/wiki/domains/core.md');
+    const glossaryBefore = await fixture.read('.fleet/wiki/glossary.md');
+
+    const result = await runFleet([
+      'wiki',
+      'update',
+      '--repo',
+      fixture.root,
+      '--json',
+    ]);
+    expect(result.exitCode).toBe(0);
+    const report = JSON.parse(result.stdout);
+    expect(report.pagesWritten).toContain('domains/repository.md');
+    expect(report.pagesWritten).toContain('architecture/overview.md');
+    expect(report.pagesWritten).toContain('index.md');
+    expect(report.pagesWritten).not.toContain('domains/core.md');
+
+    // 逐字节断言：无关页面零变化（SC-003）
+    expect(await fixture.read('.fleet/wiki/domains/core.md')).toBe(coreBefore);
+    expect(await fixture.read('.fleet/wiki/glossary.md')).toBe(glossaryBefore);
+    // 受影响页面被刷新（锚点推进，内容可能相同但元数据更新）
+    expect(await fixture.read('.fleet/wiki/domains/repository.md')).not.toBe(
+      repositoryBefore,
+    );
+    expect(result.stderr).toContain('wiki.update.completed');
+  });
+
+  it('mixed 页人工区保留 + .backup 出现（FR-009，SC-003 人工保护）', async () => {
+    const pagePath = '.fleet/wiki/domains/core.md';
+    const original = await fixture.read(pagePath);
+    // 围栏外（文件末尾）追加人工内容 → mixed 页
+    await fixture.write({
+      [pagePath]: `${original}\n人工补充：core 的注意事项。\n`,
+    });
+
+    await fixture.commit(
+      { 'packages/core/src/another.ts': 'export const ANOTHER = 1;\n' },
+      'fixture: touch core again',
+    );
+
+    const result = await runFleet([
+      'wiki',
+      'update',
+      '--repo',
+      fixture.root,
+      '--json',
+    ]);
+    expect(result.exitCode).toBe(0);
+    const updated = await fixture.read(pagePath);
+    expect(updated).toContain('人工补充：core 的注意事项。');
+    const report = JSON.parse(result.stdout);
+    expect(
+      report.backups.some((backup: string) => backup.includes('core.md')),
+    ).toBe(true);
+    const backup = await fixture.read('.fleet/wiki/.backup/domains/core.md');
+    expect(backup).toContain('人工补充：core 的注意事项。');
+  });
+
+  it('非 git 仓库：update 无操作 + note 提示', async () => {
+    await runFleet(['wiki', 'build', '--repo', nonGit.root, '--json']);
+    const result = await runFleet([
+      'wiki',
+      'update',
+      '--repo',
+      nonGit.root,
+      '--json',
+    ]);
+    expect(result.exitCode).toBe(0);
+    expect(JSON.parse(result.stdout).note).toContain('fleet wiki build');
+  });
+
+  it('wiki 缺失：update 退出码 1 + 指引', async () => {
+    const empty = await createWikiFixture();
+    try {
+      const result = await runFleet([
+        'wiki',
+        'update',
+        '--repo',
+        empty.root,
+        '--json',
+      ]);
+      expect(result.exitCode).toBe(1);
+      expect(result.stderr).toContain('fleet wiki init');
+    } finally {
+      await empty.destroy();
+    }
+  });
+});

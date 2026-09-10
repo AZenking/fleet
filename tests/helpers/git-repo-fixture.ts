@@ -102,7 +102,12 @@ export async function createWikiFixture(): Promise<WikiFixture> {
         });
         await writeFile(path.join(root, relative), content, 'utf8');
       }
-      await git(root, ['add', '-A']);
+      // 只提交显式给定文件：add -A 会把 .fleet/wiki（夹具未忽略）
+      // 卷进 diff，污染页面级 stale 判定的测试基线
+      const targets = Object.keys(files);
+      if (targets.length > 0) {
+        await git(root, ['add', '--', ...targets]);
+      }
       await git(root, ['commit', '-m', message]);
     },
     async write(files) {
@@ -171,7 +176,12 @@ export async function createSampleRepoGitFixture(): Promise<WikiFixture> {
         });
         await writeFile(path.join(root, relative), content, 'utf8');
       }
-      await git(root, ['add', '-A']);
+      // 只提交显式给定文件：add -A 会把 .fleet/wiki（夹具未忽略）
+      // 卷进 diff，污染页面级 stale 判定的测试基线
+      const targets = Object.keys(files);
+      if (targets.length > 0) {
+        await git(root, ['add', '--', ...targets]);
+      }
       await git(root, ['commit', '-m', message]);
     },
     async write(files) {
