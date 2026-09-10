@@ -3,6 +3,7 @@ import pkg from '../package.json' with { type: 'json' };
 import { registerDoctorCommand } from './commands/doctor.js';
 import { registerRepoCommand } from './commands/repo.js';
 import { registerVersionCommand } from './commands/version.js';
+import { registerWikiCommand } from './commands/wiki.js';
 
 const program = new Command();
 
@@ -14,6 +15,7 @@ program
 registerVersionCommand(program);
 registerDoctorCommand(program);
 registerRepoCommand(program);
+registerWikiCommand(program);
 
 program.parseAsync().catch((err: unknown) => {
   console.error(err instanceof Error ? err.message : String(err));
