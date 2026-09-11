@@ -8,7 +8,8 @@ Review。Codex Desktop 负责需求讨论与最终审阅，Repository Intelligen
 当前进度：**Phase A（Repository Intelligence 0.1）已交付**，Phase B
 （Fleet Kernel）进行中——M0 工程基线 / M1 CodeGraph + Fallback /
 M2 LLM Wiki / M3 Evidence System / M4 Core Domain（mission 校验）/
-M5 Task DAG + Scheduler（确定性调度循环）。
+M5 Task DAG + Scheduler（确定性调度循环）/ M6 RuntimeAdapter +
+Fake Agents——**Fleet Kernel（M4–M6）release gate 已达成**。
 
 ## 要求
 
@@ -95,6 +96,26 @@ pnpm fleet mission validate missions/demo.yaml --json   # 结构化报告
   活样例 `missions/demo.yaml`。
 - 验证手册：[specs/005-m4-core-domain/quickstart.md](specs/005-m4-core-domain/quickstart.md)
 
+## fleet run
+
+执行 mission：M4 校验前置（非法文件零执行）→ M5 DAG 与确定性
+调度（并发 3 / 重试 1 / 失败传播）→ Fake 运行时（模拟五角色
+延迟画像）→ Run 报告（任务表 / 执行次数 / 传播链 / 事件）。
+
+```bash
+pnpm fleet run missions/demo.yaml            # 文本任务表
+pnpm fleet run missions/demo.yaml --json     # RunReport（M4 Run 实例）
+```
+
+- 运行时固定 **FakeRuntimeAdapter**（真实 Runtime 属 M7）——契约
+  四条款已合同化：异常不逃逸 / timeout 诚实（迟到结果丢弃）/
+  cancel 单次 settle / 清理完备。
+- 任务执行预算：task 级 maxDurationMs > mission 级 > 默认 5000ms
+  （整段透传，超时即失败并按 M5 语义重试与传播）。
+- autonomous mission（无任务）→ 提示"Reason 规划属 M7"并正常
+  退出（M7 衔接点）。
+- 验证手册：[specs/007-m6-runtime-fake-agents/quickstart.md](specs/007-m6-runtime-fake-agents/quickstart.md)
+
 ## fleet wiki
 
 仓库持久知识层（LLM Wiki）：`.fleet/wiki/` 下的 Markdown 知识库，
@@ -123,7 +144,7 @@ pnpm fleet wiki query "调查链路在哪个包"     # 全文检索 + 可解释�
 ## 仓库结构
 
 ```text
-apps/cli/               fleet 命令行（doctor / version / repo investigate / wiki / mission）
+apps/cli/               fleet 命令行（doctor / version / repo investigate / wiki / mission / run）
 packages/core/          共享基础能力：config / errors / events / fs / git /
                         ids / logging / probe / diagnostics
 packages/repository/    Repository Intelligence：codegraph 适配层 +
@@ -134,6 +155,8 @@ packages/mission/       Fleet Kernel 任务域：Mission/Task/Artifact/Run
                         实体 schema + 两层校验（loader + semantic）
 packages/scheduler/     Fleet Kernel 调度层：Task DAG（环检测/就绪
                         选择）+ Rule-based Scheduler（并发/重试/传播）
+packages/runtime/       Fleet 运行时层：RuntimeAdapter 契约 + Fake
+                        （timeout/cancel/清理合同化）+ 桥接 + run 编排
 configs/                fleet.yaml（仓库级 Fleet 配置）
 missions/               mission 文件（demo.yaml 为活样例）
 tests/cli/              CLI 进程级 e2e
@@ -151,6 +174,7 @@ specs/                  Spec Kit 规格与设计文档
 - M3 规格：[specs/004-m3-evidence-system/spec.md](specs/004-m3-evidence-system/spec.md)
 - M4 规格：[specs/005-m4-core-domain/spec.md](specs/005-m4-core-domain/spec.md)
 - M5 规格：[specs/006-m5-dag-scheduler/spec.md](specs/006-m5-dag-scheduler/spec.md)
+- M6 规格：[specs/007-m6-runtime-fake-agents/spec.md](specs/007-m6-runtime-fake-agents/spec.md)
 - 项目宪法：`.specify/memory/constitution.md`
 
 ## 质量门

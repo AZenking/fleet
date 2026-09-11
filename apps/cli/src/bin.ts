@@ -3,6 +3,7 @@ import pkg from '../package.json' with { type: 'json' };
 import { registerDoctorCommand } from './commands/doctor.js';
 import { registerMissionCommand } from './commands/mission.js';
 import { registerRepoCommand } from './commands/repo.js';
+import { registerRunCommand } from './commands/run.js';
 import { registerVersionCommand } from './commands/version.js';
 import { registerWikiCommand } from './commands/wiki.js';
 
@@ -17,6 +18,7 @@ registerVersionCommand(program);
 registerDoctorCommand(program);
 registerMissionCommand(program);
 registerRepoCommand(program);
+registerRunCommand(program);
 registerWikiCommand(program);
 
 program.parseAsync().catch((err: unknown) => {

@@ -23,6 +23,7 @@
     "@fleet/core": "workspace:*",
     "@fleet/mission": "workspace:*",
     "@fleet/repository": "workspace:*",
+    "@fleet/runtime": "workspace:*",
     "commander": "^15.0.0"
   },
   "devDependencies": {

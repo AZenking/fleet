@@ -76,7 +76,7 @@ class TaskDagImpl implements TaskDag {
 }
 
 /** 构建任务图（校验 + 建边）。非法输入抛 DagBuildError（issues 逐项）。 */
-export function buildDag(tasks: Task[]): TaskDag {
+export function buildDag(tasks: Task[]): TaskDagImpl {
   const issues: ConfigIssue[] = [];
 
   const seen = new Map<string, number[]>();

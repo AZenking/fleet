@@ -29,6 +29,12 @@ export default defineConfig({
       },
       {
         test: {
+          name: 'runtime',
+          include: ['packages/runtime/src/**/*.test.ts'],
+        },
+      },
+      {
+        test: {
           name: 'cli-e2e',
           include: ['tests/cli/**/*.test.ts'],
           testTimeout: 120_000,
