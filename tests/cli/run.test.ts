@@ -40,7 +40,7 @@ async function writeMission(name: string, yaml: string): Promise<string> {
 
 describe('US1：fleet run 端到端（SC-001 / SC-006）', () => {
   it('demo.yaml：completed + 依赖序 + 事件 + 报告过 runSchema + 进程干净退出', async () => {
-    const result = await runFleet(['run', demo, '--json']);
+    const result = await runFleet(['run', demo, '--no-worktree', '--json']);
     expect(result.exitCode).toBe(0);
     const report = JSON.parse(result.stdout);
     expect(report.run.status).toBe('completed');
@@ -57,7 +57,7 @@ describe('US1：fleet run 端到端（SC-001 / SC-006）', () => {
   });
 
   it('文本模式：任务表 + 终态行', async () => {
-    const result = await runFleet(['run', demo]);
+    const result = await runFleet(['run', demo, '--no-worktree']);
     expect(result.exitCode).toBe(0);
     expect(result.stdout).toContain('define-schema');
     expect(result.stdout).toContain('wire-cli');
@@ -65,8 +65,8 @@ describe('US1：fleet run 端到端（SC-001 / SC-006）', () => {
   });
 
   it('双跑：runId 不同、结果一致', async () => {
-    const first = await runFleet(['run', demo, '--json']);
-    const second = await runFleet(['run', demo, '--json']);
+    const first = await runFleet(['run', demo, '--no-worktree', '--json']);
+    const second = await runFleet(['run', demo, '--no-worktree', '--json']);
     const a = JSON.parse(first.stdout);
     const b = JSON.parse(second.stdout);
     expect(a.run.id).not.toBe(b.run.id);
@@ -112,7 +112,7 @@ acceptance:
     then: 完成
 `,
     );
-    const result = await runFleet(['run', file, '--json']);
+    const result = await runFleet(['run', file, '--no-worktree', '--json']);
     expect(result.exitCode).toBe(1);
     const report = JSON.parse(result.stdout);
     expect(report.run.status).toBe('failed');
@@ -161,7 +161,7 @@ acceptance:
     then: 完成
 `,
     );
-    const result = await runFleet(['run', file, '--json']);
+    const result = await runFleet(['run', file, '--no-worktree', '--json']);
     expect(result.exitCode).toBe(0);
     const report = JSON.parse(result.stdout);
     // reason 画像 45ms × 3：并发应 ≈ 45ms 量级，串行 ≥ 135ms
@@ -186,7 +186,7 @@ acceptance:
     then: 结论
 `,
     );
-    const result = await runFleet(['run', file, '--json']);
+    const result = await runFleet(['run', file, '--no-worktree', '--json']);
     expect(result.exitCode).toBe(0);
     const report = JSON.parse(result.stdout);
     expect(report.note).toContain('Reason 规划属 M7');
@@ -212,7 +212,7 @@ acceptance:
     then: 完成
 `,
     );
-    const result = await runFleet(['run', file]);
+    const result = await runFleet(['run', file, '--no-worktree']);
     expect(result.exitCode).toBe(1);
     expect(result.stdout).toContain('未执行任何任务');
     expect(result.stdout).toContain('tasks.0.agentRole');

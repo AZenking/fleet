@@ -21,7 +21,8 @@ import type { RuntimeRegistry } from './registry.js';
 
 export interface AgentExecutorConfig {
   registry: RuntimeRegistry;
-  cwd: string;
+  /** 主仓根；或 per-task 解析（M8 worktree 集成：写角色查表得 worktree 路径） */
+  cwd: string | ((task: Task) => string);
   missionMaxDurationMs?: number;
   defaultTimeoutMs?: number;
 }
@@ -53,7 +54,10 @@ export class AgentTaskExecutor implements TaskExecutor {
     const request: RuntimeRequest = {
       runId,
       agentId: `agent:${task.id}`,
-      cwd: this.config.cwd,
+      cwd:
+        typeof this.config.cwd === 'function'
+          ? this.config.cwd(task)
+          : this.config.cwd,
       prompt: `[${definition.role} · ${permission}] ${definition.systemPromptSegment}\n[任务 ${task.id}] ${task.goal}`,
       env: {
         [REQUEST_ROLE_ENV]: task.agentRole,

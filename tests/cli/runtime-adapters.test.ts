@@ -51,7 +51,7 @@ const STANDIN_PATH = (dir: string): Record<string, string> => ({
 describe('替身运行时端到端（确定性）', () => {
   it('--runtime ok.sh：全角色接替身，prompt 与权限真实到达 CLI', async () => {
     const result = await runFleet(
-      ['run', demo, '--runtime', 'ok.sh', '--json'],
+      ['run', demo, '--runtime', 'ok.sh', '--no-worktree', '--json'],
       { env: STANDIN_PATH(fixtureClis) },
     );
     expect(result.exitCode).toBe(0);
@@ -63,9 +63,9 @@ describe('替身运行时端到端（确定性）', () => {
   });
 
   it('SC-001 替换自由度：fake vs 替身双跑——派发序一致，行为差异仅来自注册', async () => {
-    const fakeRun = await runFleet(['run', demo, '--json']);
+    const fakeRun = await runFleet(['run', demo, '--no-worktree', '--json']);
     const standinRun = await runFleet(
-      ['run', demo, '--runtime', 'ok.sh', '--json'],
+      ['run', demo, '--runtime', 'ok.sh', '--no-worktree', '--json'],
       { env: STANDIN_PATH(fixtureClis) },
     );
     expect(fakeRun.exitCode).toBe(0);
@@ -82,7 +82,7 @@ describe('替身运行时端到端（确定性）', () => {
 
   it('单角色覆盖：reason=替身（demo 全 reason 任务 → 全部替身效果）', async () => {
     const result = await runFleet(
-      ['run', demo, '--runtime', 'reason=ok.sh', '--json'],
+      ['run', demo, '--runtime', 'reason=ok.sh', '--no-worktree', '--json'],
       { env: STANDIN_PATH(fixtureClis) },
     );
     expect(result.exitCode).toBe(0);
@@ -118,22 +118,8 @@ acceptance:
 `,
       'utf8',
     );
-    const result = await runFleet(
-      [
-        'run',
-        mission,
-        '--runtime',
-        'ok=fake',
-        '--runtime',
-        'bad-role=x',
-        '--json',
-      ],
-      { env: STANDIN_PATH(fixtureClis) },
-    ).catch(() => undefined);
-    void result;
-    // 正确路径：bad 用 fail.sh，其余 fake
     const proper = await runFleet(
-      ['run', mission, '--runtime', 'fail.sh', '--json'],
+      ['run', mission, '--runtime', 'fail.sh', '--no-worktree', '--json'],
       { env: STANDIN_PATH(fixtureClis) },
     );
     expect(proper.exitCode).toBe(1);
@@ -165,7 +151,13 @@ describe('不静默降级（FR-007 / quickstart E）', () => {
   });
 
   it('未知名且 PATH 不可达 → 用法级报错', async () => {
-    const result = await runFleet(['run', demo, '--runtime', 'ghost-cli']);
+    const result = await runFleet([
+      'run',
+      demo,
+      '--runtime',
+      'ghost-cli',
+      '--no-worktree',
+    ]);
     expect(result.exitCode).toBe(2);
     expect(result.stderr).toContain('未知运行时');
   });
@@ -208,6 +200,7 @@ acceptance:
       mission,
       '--runtime',
       'reason=pi',
+      '--no-worktree',
       '--json',
     ]);
     // 真实 LLM 输出不可断言成败（认证 / 网络 / 模型行为）——

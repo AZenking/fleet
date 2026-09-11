@@ -1,0 +1,36 @@
+{
+  "name": "@fleet/workspace",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Fleet 物理工作区层：Git Worktree 隔离（create/getDiff/merge/destroy）+ 处置装饰器 + 孤儿检测",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest run --project workspace"
+  },
+  "dependencies": {
+    "@fleet/core": "workspace:*",
+    "@fleet/mission": "workspace:*",
+    "@fleet/runtime": "workspace:*",
+    "@fleet/scheduler": "workspace:*",
+    "execa": "^10.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^26.5.0",
+    "tsup": "^8.5.1",
+    "typescript": "^5.9.3"
+  }
+}

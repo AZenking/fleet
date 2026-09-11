@@ -41,6 +41,13 @@ export default defineConfig({
       },
       {
         test: {
+          name: 'workspace',
+          include: ['packages/workspace/src/**/*.test.ts'],
+          testTimeout: 30_000,
+        },
+      },
+      {
+        test: {
           name: 'cli-e2e',
           include: ['tests/cli/**/*.test.ts'],
           testTimeout: 120_000,

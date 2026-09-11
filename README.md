@@ -7,7 +7,7 @@ Review。Codex Desktop 负责需求讨论与最终审阅，Repository Intelligen
 
 当前进度：Phase A（Repository Intelligence 0.1）与 Phase B
 （**Fleet Kernel M4–M6**）已交付；Phase C 进行中——M7 五角色
-Agent + 真实 Runtime（Codex/Gemini/Pi 适配器 + 权限系统强制）。
+Agent + 真实 Runtime、**M8 Workspace + Git Worktree（物理隔离）**。
 
 ## 要求
 
@@ -111,6 +111,12 @@ pnpm fleet run missions/demo.yaml --json     # RunReport（M4 Run 实例）
 - **权限系统强制（宪法 II）**：五角色权限矩阵单一来源——
   reflex=轻写 / focus·insight·wisdom=只读 / reason=唯一深写；
   每个请求必带权限声明，裸请求被适配器拒绝（不启子进程）。
+- **Worktree 物理隔离（M8）**：写授权角色（reason/reflex）在
+  `.fleet/worktrees/` 专属 Git Worktree 执行，只读角色在主仓根；
+  多任务并行互不污染、主仓零泄漏（SC-002 三段式验收）。merge
+  不强合（冲突结构化报告）；成功即合/失败即弃（`--no-worktree`
+  关闭）。六类故障（dirty/残留分支/空仓/上限/孤儿/清理失败）
+  结构化处理；主仓 dirty 时拒绝执行（基线可复现优先）。
 - 任务执行预算：task 级 maxDurationMs > mission 级 > 默认 5000ms
   （整段透传，超时即失败并按 M5 语义重试与传播）。
 - autonomous mission（无任务）→ 提示"Reason 规划属 M7"并正常
@@ -161,6 +167,9 @@ packages/runtime/       Fleet 运行时层：RuntimeAdapter 契约 + Fake
                         + CLI 适配器基座与 pi/codex/gemini + 探测
 packages/agents/        Fleet 认知角色层：五角色定义 + 权限矩阵
                         （Tool Policy）+ 运行时注册表 + 角色执行器
+packages/workspace/     Fleet 物理工作区层：Git Worktree 隔离
+                        （create/diff/merge/destroy）+ 处置装饰器 +
+                        孤儿检测与最小清理
 configs/                fleet.yaml（仓库级 Fleet 配置）
 missions/               mission 文件（demo.yaml 为活样例）
 tests/cli/              CLI 进程级 e2e
@@ -180,6 +189,7 @@ specs/                  Spec Kit 规格与设计文档
 - M5 规格：[specs/006-m5-dag-scheduler/spec.md](specs/006-m5-dag-scheduler/spec.md)
 - M6 规格：[specs/007-m6-runtime-fake-agents/spec.md](specs/007-m6-runtime-fake-agents/spec.md)
 - M7 规格：[specs/008-m7-agents-real-runtime/spec.md](specs/008-m7-agents-real-runtime/spec.md)
+- M8 规格：[specs/009-m8-workspace-worktree/spec.md](specs/009-m8-workspace-worktree/spec.md)
 - 项目宪法：`.specify/memory/constitution.md`
 
 ## 质量门

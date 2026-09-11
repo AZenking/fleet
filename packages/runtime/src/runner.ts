@@ -48,11 +48,18 @@ export type MissionRunEvent =
       durationMs: number;
     };
 
-/** 执行器可报告面（AgentTaskExecutor / M6 bridge 共同形态） */
+/** 执行器可报告面（AgentTaskExecutor / M6 bridge / M8 装饰器共同形态） */
 interface ExecutorReportFace {
   taskTimings?: Map<string, { startedAt: string; endedAt: string }>;
   perTaskTimeoutMs?: Map<string, number>;
   requests?: Array<{ role: string; runtime: string; permission: string }>;
+  /** M8 WorkspaceResolvingExecutor 的处置记录 */
+  dispositions?: Array<{
+    taskId: string;
+    action: string;
+    outcome?: string;
+    detail?: string;
+  }>;
 }
 
 export interface RunReport {
@@ -64,6 +71,13 @@ export interface RunReport {
     /** role→runtime 名义（AgentTaskExecutor 路径，SC-005 可追溯） */
     runtimes?: Record<string, string>;
   };
+  /** M8：worktree 处置记录（taskId / action / outcome / detail） */
+  workspaces?: Array<{
+    taskId: string;
+    action: string;
+    outcome?: string;
+    detail?: string;
+  }>;
   note?: string;
 }
 
@@ -172,6 +186,9 @@ export async function runMissionFile(
         ? { runtimes: runtimesMapOf(reportFace) }
         : {}),
     },
+    ...(reportFace.dispositions !== undefined
+      ? { workspaces: reportFace.dispositions }
+      : {}),
   };
   const failedCount = outcome.nodes.filter(
     (node) => node.status === 'failed',

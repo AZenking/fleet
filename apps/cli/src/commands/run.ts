@@ -21,7 +21,13 @@ import {
   knownRuntimeNames,
   registerRuntimeFactory,
 } from '@fleet/agents';
-import type { AgentRole } from '@fleet/mission';
+import type { AgentRole, Mission, Task } from '@fleet/mission';
+import {
+  GitWorktreeManager,
+  WorkspaceResolvingExecutor,
+} from '@fleet/workspace';
+import type { TaskExecutor } from '@fleet/scheduler';
+import { permissionOf } from '@fleet/runtime';
 
 /**
  * fleet run — 执行 mission（contracts/cli.md，M6/M7）。
@@ -50,10 +56,14 @@ export function registerRunCommand(program: Command): void {
       (value: string, previous: string[]) => [...previous, value],
       [] as string[],
     )
+    .option(
+      '--no-worktree',
+      '关闭 worktree 物理隔离（写角色直接在主仓根执行——回到 M7 行为）',
+    )
     .action(
       async (
         missionPath: string,
-        options: { json?: boolean; runtime?: string[] },
+        options: { json?: boolean; runtime?: string[]; worktree?: boolean },
       ) => {
         const specs = options.runtime ?? [];
 
@@ -118,19 +128,14 @@ export function registerRunCommand(program: Command): void {
           }
         }
 
+        const useWorktree = options.worktree !== false;
         const outcome = await runMissionFile(missionPath, {
           cwd: process.cwd(),
-          ...(specs.length === 0
+          ...(specs.length === 0 && !useWorktree
             ? { runtime: new FakeRuntimeAdapter() }
             : {
-                makeExecutor: (mission) =>
-                  new AgentTaskExecutor({
-                    registry: RuntimeRegistry.fromSpec(specs),
-                    cwd: process.cwd(),
-                    missionMaxDurationMs: mission.constraints.find(
-                      (constraint) => constraint.kind === 'maxDurationMs',
-                    )?.value,
-                  }),
+                makeExecutor: (mission: Mission) =>
+                  buildExecutor(mission, specs, useWorktree),
               }),
           emitEvent: (event) => {
             const fleetEvent: FleetEvent = {
@@ -225,4 +230,39 @@ function renderReport(kind: 'completed' | 'failed', report: RunReport): string {
       : `✗ mission failed · 总耗时 ${report.outcome.durationMs}ms · runId ${run.id.slice(0, 17)}…`,
   );
   return lines.join('\n');
+}
+
+/** M8 装配：worktree 集成（写角色建区/处置）或 M7 直通 */
+function buildExecutor(
+  mission: Mission,
+  specs: string[],
+  useWorktree: boolean,
+): TaskExecutor {
+  const registry = RuntimeRegistry.fromSpec(specs);
+  if (!useWorktree) {
+    return new AgentTaskExecutor({
+      registry,
+      cwd: process.cwd(),
+      missionMaxDurationMs: mission.constraints.find(
+        (constraint) => constraint.kind === 'maxDurationMs',
+      )?.value,
+    });
+  }
+  const manager = new GitWorktreeManager(process.cwd());
+  const wrapperRef: { current?: WorkspaceResolvingExecutor } = {};
+  const wrapper = new WorkspaceResolvingExecutor({
+    inner: new AgentTaskExecutor({
+      registry,
+      cwd: (task: Task) => wrapperRef.current!.cwdResolver(task),
+      missionMaxDurationMs: mission.constraints.find(
+        (constraint) => constraint.kind === 'maxDurationMs',
+      )?.value,
+    }),
+    manager,
+    repoRoot: process.cwd(),
+    runId: `run_ws_${mission.id}`,
+  });
+  wrapperRef.current = wrapper;
+  void permissionOf;
+  return wrapper;
 }

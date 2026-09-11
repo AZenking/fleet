@@ -1,3 +1,6 @@
+import { writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+
 import type { AgentRole } from '@fleet/mission';
 
 import {
@@ -28,6 +31,8 @@ export interface FakeRuntimeOptions {
   script?: Record<string, FakeStep[]>;
   /** 角色画像整体置零（CI 快跑） */
   zeroDelays?: boolean;
+  /** 成功路径在 request.cwd 写相对路径文件（M8 worktree 集成的写行为替身） */
+  touchOnSuccess?: string[];
 }
 
 export class FakeRuntimeAdapter implements RuntimeAdapter {
@@ -37,6 +42,8 @@ export class FakeRuntimeAdapter implements RuntimeAdapter {
   readonly requests: RuntimeRequest[] = [];
   readonly settleLog: Array<{ runId: string; result: RuntimeResult }> = [];
 
+  private readonly touchOnSuccess: string[];
+
   constructor(options: FakeRuntimeOptions = {}) {
     this.script = Object.fromEntries(
       Object.entries(options.script ?? {}).map(([key, steps]) => [
@@ -45,6 +52,7 @@ export class FakeRuntimeAdapter implements RuntimeAdapter {
       ]),
     );
     this.zeroDelays = options.zeroDelays === true;
+    this.touchOnSuccess = options.touchOnSuccess ?? [];
   }
 
   /** 在途执行数（cleanup 断言：结束后 === 0） */
@@ -104,6 +112,17 @@ export class FakeRuntimeAdapter implements RuntimeAdapter {
         run.timers.push(
           setTimeout(() => {
             if (step.outcome === 'success') {
+              for (const file of this.touchOnSuccess) {
+                try {
+                  writeFileSync(
+                    join(request.cwd, file),
+                    `fake-write: ${request.agentId}\n`,
+                    { flag: 'a' },
+                  );
+                } catch {
+                  // 写失败不改变执行结果（替身行为，非被测对象）
+                }
+              }
               finish({
                 ok: true,
                 ...(step.output !== undefined ? { output: step.output } : {}),
