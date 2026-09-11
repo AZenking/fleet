@@ -70,7 +70,12 @@ describe('US1：fleet run 端到端（SC-001 / SC-006）', () => {
     const a = JSON.parse(first.stdout);
     const b = JSON.parse(second.stdout);
     expect(a.run.id).not.toBe(b.run.id);
-    expect(a.outcome).toEqual(b.outcome);
+    // durationMs 天然逐次漂移——确定性断言剥离时间字段（SC 语义）
+    const stripTiming = (outcome: { durationMs?: number }) => ({
+      ...outcome,
+      durationMs: undefined,
+    });
+    expect(stripTiming(a.outcome)).toEqual(stripTiming(b.outcome));
     expect(a.run.taskRuns.map((r: { status: string }) => r.status)).toEqual(
       b.run.taskRuns.map((r: { status: string }) => r.status),
     );

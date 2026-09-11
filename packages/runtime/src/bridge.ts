@@ -4,7 +4,11 @@ import type { TaskExecutor } from '@fleet/scheduler';
 import { ID_PREFIXES, createId } from '@fleet/core';
 
 import type { RuntimeAdapter } from './types.js';
-import { DEFAULT_TASK_TIMEOUT_MS } from './types.js';
+import {
+  DEFAULT_TASK_TIMEOUT_MS,
+  REQUEST_PERMISSION_ENV,
+  permissionOf,
+} from './types.js';
 
 /**
  * MissionRuntimeBridge（research.md D5）：TaskExecutor（M5 端口）到
@@ -51,7 +55,10 @@ export class MissionRuntimeBridge implements TaskExecutor {
         agentId: `agent:${task.id}`,
         cwd: this.config.cwd,
         prompt: `[任务 ${task.id}] ${task.goal}`,
-        env: { FLEET_AGENT_ROLE: task.agentRole },
+        env: {
+          FLEET_AGENT_ROLE: task.agentRole,
+          [REQUEST_PERMISSION_ENV]: permissionOf(task.agentRole),
+        },
         timeoutMs,
       });
       return {

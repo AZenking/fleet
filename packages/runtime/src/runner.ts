@@ -7,7 +7,8 @@ import {
   type TaskRun,
 } from '@fleet/mission';
 import { Scheduler, buildDag, type RunOutcome } from '@fleet/scheduler';
-import type { SchedulerConfig } from '@fleet/scheduler';
+import type { SchedulerConfig, TaskExecutor } from '@fleet/scheduler';
+import type { Mission } from '@fleet/mission';
 
 import { MissionRuntimeBridge } from './bridge.js';
 import { FakeRuntimeAdapter } from './fake.js';
@@ -28,6 +29,12 @@ export interface RunnerOptions {
   cwd?: string;
   /** 事件出口（缺省丢弃——库层可测，CLI 接 stderr） */
   emitEvent?: (event: MissionRunEvent) => void;
+  /**
+   * M7：执行器工厂（AgentTaskExecutor 注入点）——提供时取代默认
+   * bridge+runtime 路径（角色解析 / 权限注入在 @fleet/agents）。
+   * 报告合成 duck-typing 读取 requests/taskTimings/perTaskTimeoutMs。
+   */
+  makeExecutor?: (mission: Mission) => TaskExecutor;
 }
 
 export type MissionRunEvent =
@@ -41,12 +48,21 @@ export type MissionRunEvent =
       durationMs: number;
     };
 
+/** 执行器可报告面（AgentTaskExecutor / M6 bridge 共同形态） */
+interface ExecutorReportFace {
+  taskTimings?: Map<string, { startedAt: string; endedAt: string }>;
+  perTaskTimeoutMs?: Map<string, number>;
+  requests?: Array<{ role: string; runtime: string; permission: string }>;
+}
+
 export interface RunReport {
   run: Run;
   outcome: RunOutcome;
   runtime: {
-    adapter: 'fake';
+    adapter: string;
     perTaskTimeoutMs: Record<string, number>;
+    /** role→runtime 名义（AgentTaskExecutor 路径，SC-005 可追溯） */
+    runtimes?: Record<string, string>;
   };
   note?: string;
 }
@@ -115,13 +131,17 @@ export async function runMissionFile(
 
   const dag = buildDag(tasks);
   const scheduler = new Scheduler(options.schedulerConfig);
-  const outcome = await scheduler.run(dag, bridge);
+  const executor: TaskExecutor =
+    options.makeExecutor !== undefined ? options.makeExecutor(mission) : bridge;
+  const outcome = await scheduler.run(dag, executor);
   const endedAt = new Date().toISOString();
 
   const tasksById = new Map(tasks.map((task) => [task.id, task]));
+  const reportFace = executor as ExecutorReportFace;
+  const timings = reportFace.taskTimings ?? bridge.taskTimings;
   const taskRuns: TaskRun[] = outcome.nodes.map((node) => {
     const task = tasksById.get(node.taskId);
-    const timing = bridge.taskTimings.get(node.taskId);
+    const timing = timings.get(node.taskId);
     return {
       taskId: node.taskId,
       status: node.status,
@@ -144,8 +164,13 @@ export async function runMissionFile(
     },
     outcome,
     runtime: {
-      adapter: 'fake',
-      perTaskTimeoutMs: Object.fromEntries(bridge.perTaskTimeoutMs),
+      adapter: runtimeNamesOf(reportFace),
+      perTaskTimeoutMs: Object.fromEntries(
+        reportFace.perTaskTimeoutMs ?? bridge.perTaskTimeoutMs,
+      ),
+      ...(runtimesMapOf(reportFace) !== undefined
+        ? { runtimes: runtimesMapOf(reportFace) }
+        : {}),
     },
   };
   const failedCount = outcome.nodes.filter(
@@ -163,4 +188,24 @@ export async function runMissionFile(
     durationMs: outcome.durationMs,
   });
   return { kind: runStatus, report };
+}
+
+function runtimeNamesOf(face: ExecutorReportFace): string {
+  const requests = face.requests;
+  if (requests === undefined) {
+    return 'fake';
+  }
+  const names = [...new Set(requests.map((request) => request.runtime))];
+  return names.length === 1 ? (names[0] ?? 'fake') : 'mixed';
+}
+
+function runtimesMapOf(
+  face: ExecutorReportFace,
+): Record<string, string> | undefined {
+  if (face.requests === undefined) {
+    return undefined;
+  }
+  return Object.fromEntries(
+    face.requests.map((request) => [request.role, request.runtime]),
+  );
 }

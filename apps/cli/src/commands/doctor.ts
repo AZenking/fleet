@@ -4,7 +4,6 @@ import path from 'node:path';
 import type { Command } from 'commander';
 import {
   commandExists,
-  existingCommands,
   findGitRepo,
   FleetError,
   loadFleetConfig,
@@ -18,6 +17,7 @@ import {
   type DiagnosticReport,
   type FleetEvent,
 } from '@fleet/core';
+import { probeRuntime } from '@fleet/runtime';
 import pkg from '../../package.json' with { type: 'json' };
 import { renderHuman } from '../output/human.js';
 import { renderJson } from '../output/json.js';
@@ -49,7 +49,7 @@ interface CheckDef {
   run: (ctx: CheckContext) => Promise<CheckOutcome>;
 }
 
-const AGENT_RUNTIME_COMMANDS = ['codex', 'claude', 'gemini', 'pi'] as const;
+const AGENT_RUNTIME_NAMES = ['codex', 'gemini', 'pi'] as const;
 
 const CHECKS: readonly CheckDef[] = [
   {
@@ -160,13 +160,24 @@ const CHECKS: readonly CheckDef[] = [
     label: 'Agent Runtime',
     failureSeverity: 'warning',
     run: async () => {
-      const found = await existingCommands(AGENT_RUNTIME_COMMANDS);
-      if (found.length > 0)
-        return { status: 'ok', detail: `已发现：${found.join(' / ')}` };
+      // M7：与 fleet run --runtime 同源探测（probeRuntime）
+      const results = await Promise.all(
+        AGENT_RUNTIME_NAMES.map((name) => probeRuntime(name)),
+      );
+      const found = results.filter((r) => r.available);
+      if (found.length > 0) {
+        return {
+          status: 'ok',
+          detail: found
+            .map((r) => `${r.name}${r.version ? ` ${r.version}` : ''}`)
+            .join(' / '),
+        };
+      }
+      const missing = results.filter((r) => !r.available);
       return {
         status: 'warning',
-        detail: `未发现 ${AGENT_RUNTIME_COMMANDS.join('/')} — M7 前无需安装`,
-        fixSuggestion: '接入真实 Agent Runtime 时（M7）再安装',
+        detail: `未发现 ${AGENT_RUNTIME_NAMES.join('/')} — Fake 运行时仍可执行 mission`,
+        fixSuggestion: missing.map((r) => r.installHint).join('；'),
       };
     },
   },

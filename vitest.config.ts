@@ -35,6 +35,12 @@ export default defineConfig({
       },
       {
         test: {
+          name: 'agents',
+          include: ['packages/agents/src/**/*.test.ts'],
+        },
+      },
+      {
+        test: {
           name: 'cli-e2e',
           include: ['tests/cli/**/*.test.ts'],
           testTimeout: 120_000,

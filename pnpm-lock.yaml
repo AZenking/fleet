@@ -41,6 +41,9 @@ importers:
 
   apps/cli:
     dependencies:
+      '@fleet/agents':
+        specifier: workspace:*
+        version: link:../../packages/agents
       '@fleet/core':
         specifier: workspace:*
         version: link:../../packages/core
@@ -56,6 +59,31 @@ importers:
       commander:
         specifier: ^15.0.0
         version: 15.0.0
+    devDependencies:
+      '@types/node':
+        specifier: ^26.5.0
+        version: 26.5.0
+      tsup:
+        specifier: ^8.5.1
+        version: 8.5.1(postcss@8.5.28)(typescript@5.9.3)(yaml@2.9.0)
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
+  packages/agents:
+    dependencies:
+      '@fleet/core':
+        specifier: workspace:*
+        version: link:../core
+      '@fleet/mission':
+        specifier: workspace:*
+        version: link:../mission
+      '@fleet/runtime':
+        specifier: workspace:*
+        version: link:../runtime
+      '@fleet/scheduler':
+        specifier: workspace:*
+        version: link:../scheduler
     devDependencies:
       '@types/node':
         specifier: ^26.5.0

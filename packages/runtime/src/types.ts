@@ -60,3 +60,51 @@ export const ROLE_DELAY_PROFILE_MS: Record<AgentRole, number> = {
 
 /** 默认任务执行预算（mission/task 约束缺省时） */
 export const DEFAULT_TASK_TIMEOUT_MS = 5000;
+
+/**
+ * 权限声明（请求级必达，宪法 II）：枚举与入口校验在 runtime 层——
+ * 任何适配器（Fake / CLI）对裸请求一律拒绝；角色→权限矩阵在
+ * @fleet/agents 的 Tool Policy（单一来源）。
+ */
+export const PERMISSIONS = ['READ_ONLY', 'LIGHT_WRITE', 'DEEP_WRITE'] as const;
+export type Permission = (typeof PERMISSIONS)[number];
+
+export const REQUEST_PERMISSION_ENV = 'FLEET_PERMISSION';
+
+/** 宪法 II 矩阵（单一来源）：reflex 轻写 / reason 唯一深写 / 其余只读 */
+export const ROLE_PERMISSIONS: Record<AgentRole, Permission> = {
+  reflex: 'LIGHT_WRITE',
+  focus: 'READ_ONLY',
+  reason: 'DEEP_WRITE',
+  insight: 'READ_ONLY',
+  wisdom: 'READ_ONLY',
+};
+
+export function permissionOf(role: AgentRole): Permission {
+  return ROLE_PERMISSIONS[role];
+}
+
+export interface PermissionAssertion {
+  ok: boolean;
+  reason?: string;
+}
+
+/** 适配器入口强制：env 缺失或非合法枚举 → 拒绝（不启子进程） */
+export function assertPermissionEnv(
+  request: RuntimeRequest,
+): PermissionAssertion {
+  const declared = request.env?.[REQUEST_PERMISSION_ENV];
+  if (declared === undefined) {
+    return {
+      ok: false,
+      reason: `请求缺少权限声明（env.${REQUEST_PERMISSION_ENV}）——必须经 Tool Policy 构造，裸请求拒绝执行`,
+    };
+  }
+  if (!PERMISSIONS.includes(declared as Permission)) {
+    return {
+      ok: false,
+      reason: `非法权限声明：${declared}（合法值 ${PERMISSIONS.join(' | ')}）`,
+    };
+  }
+  return { ok: true };
+}

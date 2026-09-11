@@ -14,3 +14,6 @@ export * from './types.js';
 export * from './fake.js';
 export * from './bridge.js';
 export * from './runner.js';
+export * from './cli-adapter.js';
+export * from './cli-runtimes.js';
+export * from './availability.js';

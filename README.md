@@ -5,11 +5,9 @@ Reflex / Focus / Reason / Insight / Wisdom 五个认知角色完成实现、验�
 Review。Codex Desktop 负责需求讨论与最终审阅，Repository Intelligence
 负责大仓库的高效理解。
 
-当前进度：**Phase A（Repository Intelligence 0.1）已交付**，Phase B
-（Fleet Kernel）进行中——M0 工程基线 / M1 CodeGraph + Fallback /
-M2 LLM Wiki / M3 Evidence System / M4 Core Domain（mission 校验）/
-M5 Task DAG + Scheduler（确定性调度循环）/ M6 RuntimeAdapter +
-Fake Agents——**Fleet Kernel（M4–M6）release gate 已达成**。
+当前进度：Phase A（Repository Intelligence 0.1）与 Phase B
+（**Fleet Kernel M4–M6**）已交付；Phase C 进行中——M7 五角色
+Agent + 真实 Runtime（Codex/Gemini/Pi 适配器 + 权限系统强制）。
 
 ## 要求
 
@@ -107,9 +105,12 @@ pnpm fleet run missions/demo.yaml            # 文本任务表
 pnpm fleet run missions/demo.yaml --json     # RunReport（M4 Run 实例）
 ```
 
-- 运行时固定 **FakeRuntimeAdapter**（真实 Runtime 属 M7）——契约
-  四条款已合同化：异常不逃逸 / timeout 诚实（迟到结果丢弃）/
-  cancel 单次 settle / 清理完备。
+- 运行时可选择（`--runtime`）：缺省 **Fake**；`pi` / `codex` /
+  `gemini` 真实 CLI 适配器（子进程 + 进程组 kill + 输出截断）；
+  显式指定不可用即报错，**不静默降级**。
+- **权限系统强制（宪法 II）**：五角色权限矩阵单一来源——
+  reflex=轻写 / focus·insight·wisdom=只读 / reason=唯一深写；
+  每个请求必带权限声明，裸请求被适配器拒绝（不启子进程）。
 - 任务执行预算：task 级 maxDurationMs > mission 级 > 默认 5000ms
   （整段透传，超时即失败并按 M5 语义重试与传播）。
 - autonomous mission（无任务）→ 提示"Reason 规划属 M7"并正常
@@ -157,6 +158,9 @@ packages/scheduler/     Fleet Kernel 调度层：Task DAG（环检测/就绪
                         选择）+ Rule-based Scheduler（并发/重试/传播）
 packages/runtime/       Fleet 运行时层：RuntimeAdapter 契约 + Fake
                         （timeout/cancel/清理合同化）+ 桥接 + run 编排
+                        + CLI 适配器基座与 pi/codex/gemini + 探测
+packages/agents/        Fleet 认知角色层：五角色定义 + 权限矩阵
+                        （Tool Policy）+ 运行时注册表 + 角色执行器
 configs/                fleet.yaml（仓库级 Fleet 配置）
 missions/               mission 文件（demo.yaml 为活样例）
 tests/cli/              CLI 进程级 e2e
@@ -175,6 +179,7 @@ specs/                  Spec Kit 规格与设计文档
 - M4 规格：[specs/005-m4-core-domain/spec.md](specs/005-m4-core-domain/spec.md)
 - M5 规格：[specs/006-m5-dag-scheduler/spec.md](specs/006-m5-dag-scheduler/spec.md)
 - M6 规格：[specs/007-m6-runtime-fake-agents/spec.md](specs/007-m6-runtime-fake-agents/spec.md)
+- M7 规格：[specs/008-m7-agents-real-runtime/spec.md](specs/008-m7-agents-real-runtime/spec.md)
 - 项目宪法：`.specify/memory/constitution.md`
 
 ## 质量门

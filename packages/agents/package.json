@@ -1,0 +1,35 @@
+{
+  "name": "@fleet/agents",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Fleet 认知角色层：五角色定义 + 权限矩阵（Tool Policy）+ 运行时注册表 + 角色解析执行器",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest run --project agents"
+  },
+  "dependencies": {
+    "@fleet/core": "workspace:*",
+    "@fleet/mission": "workspace:*",
+    "@fleet/runtime": "workspace:*",
+    "@fleet/scheduler": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^26.5.0",
+    "tsup": "^8.5.1",
+    "typescript": "^5.9.3"
+  }
+}

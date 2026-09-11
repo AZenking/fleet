@@ -2,6 +2,7 @@ import type { AgentRole } from '@fleet/mission';
 
 import {
   ROLE_DELAY_PROFILE_MS,
+  assertPermissionEnv,
   type FakeStep,
   type RuntimeAdapter,
   type RuntimeRequest,
@@ -57,6 +58,11 @@ export class FakeRuntimeAdapter implements RuntimeAdapter {
   }
 
   async execute(request: RuntimeRequest): Promise<RuntimeResult> {
+    // 宪法 II：Fake 也走真实权限链路——裸请求拒绝（research.md D3）
+    const permission = assertPermissionEnv(request);
+    if (!permission.ok) {
+      return { ok: false, code: 'error', detail: permission.reason };
+    }
     this.requests.push(request);
     const taskId = request.agentId.replace(/^agent:/, '');
     const role = roleOf(request);

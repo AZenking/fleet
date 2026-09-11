@@ -20,6 +20,7 @@
     "test": "vitest run --project cli-e2e"
   },
   "dependencies": {
+    "@fleet/agents": "workspace:*",
     "@fleet/core": "workspace:*",
     "@fleet/mission": "workspace:*",
     "@fleet/repository": "workspace:*",

@@ -15,6 +15,8 @@ function request(input: Partial<RuntimeRequest> = {}): RuntimeRequest {
     agentId: 'agent:t1',
     cwd: '/repo',
     prompt: '[任务 t1] 测试',
+    // M7 起适配器入口强制权限——测试请求默认携带合法声明
+    env: { FLEET_AGENT_ROLE: 'reason', FLEET_PERMISSION: 'DEEP_WRITE' },
     timeoutMs: 5000,
     ...input,
   };
@@ -154,7 +156,10 @@ describe('角色画像与 zeroDelays', () => {
       fake.execute(
         request({
           agentId: 'agent:x',
-          env: { FLEET_AGENT_ROLE: role },
+          env: {
+            FLEET_AGENT_ROLE: role,
+            FLEET_PERMISSION: role === 'reason' ? 'DEEP_WRITE' : 'READ_ONLY',
+          },
           timeoutMs: 500,
         }),
       );
@@ -174,7 +179,7 @@ describe('角色画像与 zeroDelays', () => {
     await fake.execute(
       request({
         agentId: 'agent:x',
-        env: { FLEET_AGENT_ROLE: 'wisdom' },
+        env: { FLEET_AGENT_ROLE: 'wisdom', FLEET_PERMISSION: 'READ_ONLY' },
         timeoutMs: 500,
       }),
     );

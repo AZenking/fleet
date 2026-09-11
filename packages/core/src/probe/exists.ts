@@ -12,8 +12,13 @@ export async function commandExists(
   timeoutMs = 3000,
 ): Promise<boolean> {
   try {
-    await execa(command, ['--version'], { reject: false, timeout: timeoutMs });
-    return true;
+    // execa 的 reject:false 对 ENOENT 也 resolve（failed=true，
+    // exitCode undefined）——必须以"进程真实运行过"判定存在性
+    const result = await execa(command, ['--version'], {
+      reject: false,
+      timeout: timeoutMs,
+    });
+    return result.exitCode !== undefined;
   } catch {
     return false;
   }
