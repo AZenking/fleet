@@ -158,6 +158,29 @@ export type ValidationEvent =
       taskId: string;
       maxReviewLoops: number;
       rounds: number;
+    }
+  // M11 roadmap 别名（与 task.* 命名空间并行发射）
+  | { type: 'validation.started'; runId: string; taskId: string; loop: number }
+  | {
+      type: 'validation.completed';
+      runId: string;
+      taskId: string;
+      loop: number;
+      overall: string;
+    }
+  | { type: 'review.requested'; runId: string; taskId: string; loop: number }
+  | {
+      type: 'review.approved' | 'review.changes-requested';
+      runId: string;
+      taskId: string;
+      loop: number;
+    }
+  | {
+      type: 'review.exceeded';
+      runId: string;
+      taskId: string;
+      maxReviewLoops: number;
+      rounds: number;
     };
 
 /** 宪法 III 默认（单一来源；mission 可覆盖） */

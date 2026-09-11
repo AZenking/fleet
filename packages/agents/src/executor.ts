@@ -43,6 +43,11 @@ export interface AgentExecutorConfig {
     registry: RunArtifactRegistry;
     ledger: BudgetLedger;
     mission: Mission;
+    /** M11 事件出口（budget.warning/exceeded——缺省丢弃） */
+    onEvent?: (event: {
+      type: string;
+      payload?: Record<string, unknown>;
+    }) => void;
   };
 }
 
@@ -61,6 +66,11 @@ export class AgentTaskExecutor implements TaskExecutor {
     { startedAt: string; endedAt: string }
   >();
   readonly perTaskTimeoutMs = new Map<string, number>();
+  /** M11：在行执行（runId → 适配器）——cancelAll 的取消面 */
+  private readonly inflight = new Map<
+    string,
+    import('@fleet/runtime').RuntimeAdapter
+  >();
 
   constructor(private readonly config: AgentExecutorConfig) {}
 
@@ -90,6 +100,14 @@ export class AgentTaskExecutor implements TaskExecutor {
         feedback,
       });
       if (!built.ok) {
+        this.config.context.onEvent?.({
+          type: 'budget.exceeded',
+          payload: {
+            taskId: task.id,
+            limit: built.rejection.limit,
+            level: built.rejection.level,
+          },
+        });
         return {
           ok: false,
           retryable: false,
@@ -101,6 +119,16 @@ export class AgentTaskExecutor implements TaskExecutor {
       prompt = `[${definition.role} · ${permission}] ${definition.systemPromptSegment}\n${render(built.pkg)}`;
       contextSize = built.pkg.totalTokens;
       optimization = built.pkg.optimization;
+      if (built.pkg.compressions > 0) {
+        this.config.context.onEvent?.({
+          type: 'budget.warning',
+          payload: {
+            taskId: task.id,
+            compressions: built.pkg.compressions,
+            totalTokens: built.pkg.totalTokens,
+          },
+        });
+      }
     } else {
       prompt = `[${definition.role} · ${permission}] ${definition.systemPromptSegment}\n[任务 ${task.id}] ${task.goal}${
         feedback !== undefined ? `\n[修复反馈] ${feedback}` : ''
@@ -131,6 +159,7 @@ export class AgentTaskExecutor implements TaskExecutor {
     this.perTaskTimeoutMs.set(task.id, timeoutMs);
     const startedAt = new Date().toISOString();
     const started = Date.now();
+    this.inflight.set(runId, runtime);
     try {
       const result = await runtime.execute(request);
       this.collect(task, result, runId, started, contextSize, optimization);
@@ -149,6 +178,7 @@ export class AgentTaskExecutor implements TaskExecutor {
       );
       throw error;
     } finally {
+      this.inflight.delete(runId);
       this.taskTimings.set(task.id, {
         startedAt,
         endedAt: new Date().toISOString(),
@@ -204,6 +234,13 @@ export class AgentTaskExecutor implements TaskExecutor {
     });
     if (optimization !== undefined) {
       context.ledger.recordOptimization(task.id, optimization);
+    }
+  }
+
+  /** M11：取消全部在行执行（runtime cancel 通道——宪法 IV） */
+  async cancelAll(): Promise<void> {
+    for (const [runId, adapter] of [...this.inflight]) {
+      await adapter.cancel(runId);
     }
   }
 

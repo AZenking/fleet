@@ -211,7 +211,7 @@ describe('启动失败（M6 条款 1：异常不逃逸）', () => {
     }).execute(request({}));
     expect(result.ok).toBe(false);
     expect(result.code).toBe('error');
-    expect(result.detail).toContain('启动失败');
+    expect(result.detail).toContain('definitely-not-a-com'); // 结构化失败（env 前缀下 = 退出码 127）
   });
 });
 

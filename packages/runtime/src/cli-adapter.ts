@@ -53,16 +53,27 @@ export class CliRuntimeAdapter implements RuntimeAdapter {
       });
     }
     return new Promise<RuntimeResult>((resolve) => {
-      const child = spawn(this.config.command, this.config.buildArgs(request), {
-        cwd: request.cwd,
-        detached: true, // 进程组——kill(-pid) 覆盖孙进程
-        stdio: ['ignore', 'pipe', 'pipe'],
-        env: {
-          ...process.env,
-          ...(this.config.env ?? {}),
-          ...(request.env ?? {}),
+      // M11 派生标记：bash 包装层常驻（argv 含 FLEET_CHILD=1——
+      // ps 可见；macOS 不再显示子进程 env，exec 前缀会被替换掉）
+      const child = spawn(
+        '/bin/bash',
+        [
+          '-c',
+          'export FLEET_CHILD=1; "$0" "$@"',
+          this.config.command,
+          ...this.config.buildArgs(request),
+        ],
+        {
+          cwd: request.cwd,
+          detached: true, // 进程组——kill(-pid) 覆盖孙进程
+          stdio: ['ignore', 'pipe', 'pipe'],
+          env: {
+            ...process.env,
+            ...(this.config.env ?? {}),
+            ...(request.env ?? {}),
+          },
         },
-      });
+      );
       const state: InflightProcess = {
         settled: false,
         pid: child.pid ?? -1,

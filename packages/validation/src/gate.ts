@@ -73,6 +73,7 @@ export class ValidationReviewGate implements WorkspaceGate {
         taskId: task.id,
         loop,
       });
+      this.emit({ type: 'validation.started', runId, taskId: task.id, loop });
       const artifact = await this.config.runner.validate({
         taskId: task.id,
         workspace,
@@ -91,6 +92,13 @@ export class ValidationReviewGate implements WorkspaceGate {
           status: check.status,
         })),
       });
+      this.emit({
+        type: 'validation.completed',
+        runId,
+        taskId: task.id,
+        loop,
+        overall: artifact.overall,
+      });
 
       // 需要"再修一次"的结论：验证失败 或 审阅退回
       let feedback: string;
@@ -106,6 +114,7 @@ export class ValidationReviewGate implements WorkspaceGate {
           taskId: task.id,
           loop,
         });
+        this.emit({ type: 'review.requested', runId, taskId: task.id, loop });
         const review = await this.config.reviewer.review(
           reviewRequest(
             this.config.mission,
@@ -126,6 +135,15 @@ export class ValidationReviewGate implements WorkspaceGate {
           loop,
           verdict: review.verdict.verdict,
         });
+        this.emit({
+          type:
+            review.verdict.verdict === 'approved'
+              ? 'review.approved'
+              : 'review.changes-requested',
+          runId,
+          taskId: task.id,
+          loop,
+        });
         if (review.verdict.verdict === 'approved') {
           return this.approved(task.id, rounds, artifacts, verdicts);
         }
@@ -139,6 +157,13 @@ export class ValidationReviewGate implements WorkspaceGate {
       if (rounds >= max) {
         this.emit({
           type: 'task.review.exceeded',
+          runId,
+          taskId: task.id,
+          maxReviewLoops: max,
+          rounds,
+        });
+        this.emit({
+          type: 'review.exceeded',
           runId,
           taskId: task.id,
           maxReviewLoops: max,

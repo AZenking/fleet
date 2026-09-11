@@ -268,3 +268,32 @@ describe('investigate 高风险升级（FR-007）', () => {
     expect(codes(result.fallbacks)).toContain('high_risk');
   });
 });
+
+describe('M11 加速器事件发射点（FR-003：只补发射，不改行为）', () => {
+  it('codegraph 不可用 → codegraph.fallback 事件（行为不变）', async () => {
+    const events: string[] = [];
+    const { fs, repoRoot } = memoryRepo(FILES);
+    const result = await investigate('targetFunc', {
+      repoRoot,
+      fs,
+      forceWalkSearch: true,
+      adapter: new FakeCodeGraphAdapter({
+        health: {
+          available: false,
+          initialized: false,
+          indexFresh: false,
+          pendingChanges: 0,
+          capabilities: [],
+        },
+      }),
+      emitEvent: (event) => events.push(event.type),
+    });
+    expect(result.pathsUsed).toContain('search'); // 行为不变
+    expect(events).toContain('codegraph.fallback');
+  });
+
+  it('缺省 emitEvent → 零事件亦零异常（向后兼容）', async () => {
+    const result = await investigate('targetFunc', makeOptions({}));
+    expect(result).toBeDefined();
+  });
+});

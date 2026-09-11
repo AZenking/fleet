@@ -152,7 +152,16 @@ describe('runMissionFile 编排', () => {
     expect(report.runtime.perTaskTimeoutMs).toEqual({ a: 60000, b: 60000 });
     // 事件顺序：started 先、终态最后
     expect(events.map((event) => event.type)).toEqual([
+      'mission.created',
+      'mission.started',
       'mission.run.started',
+      'task.queued',
+      'task.queued',
+      'task.started',
+      'task.completed',
+      'task.started',
+      'task.completed',
+      'mission.completed',
       'mission.run.completed',
     ]);
     // 时间戳：执行过的任务带最后执行时间

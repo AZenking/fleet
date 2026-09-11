@@ -2,6 +2,9 @@ import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
   test: {
+    // 并行限流：git 子进程风暴型测试（workspace/e2e）在满并发下
+    // 互相争资源导致超时假失败——上限 4 worker 保稳定优先
+    maxWorkers: 4,
     projects: [
       {
         test: {
@@ -63,6 +66,13 @@ export default defineConfig({
         test: {
           name: 'context',
           include: ['packages/context/src/**/*.test.ts'],
+        },
+      },
+      {
+        test: {
+          name: 'observability',
+          include: ['packages/observability/src/**/*.test.ts'],
+          testTimeout: 30_000,
         },
       },
       {

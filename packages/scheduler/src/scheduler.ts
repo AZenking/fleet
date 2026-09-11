@@ -32,32 +32,79 @@ export class Scheduler {
   async run(dag: TaskDagImpl, executor: TaskExecutor): Promise<RunOutcome> {
     const start = performance.now();
     const dispatchOrder: string[] = [];
+    let cancelled = false;
 
     for (;;) {
       // 1. 失败传播（failed → 传递依赖 pending → skipped，不动点）
       this.propagateFailures(dag);
-      // 2. 就绪选择（声明序，截断到并发额度）
+      // 2. M11 cancel 检查点（批次屏障间——此时零在行任务）：
+      //    未开始任务不开始，pending → skipped，cancelled 收束
+      if (this.config.shouldStop?.() === true) {
+        for (const node of dag.allNodes()) {
+          if (node.status === 'pending') {
+            node.status = 'skipped';
+            node.skippedBy = 'cancelled';
+          }
+        }
+        cancelled = true;
+        break;
+      }
+      // 3. 就绪选择（声明序，截断到并发额度）
       const ready = dag.readyTasks().slice(0, this.config.maxConcurrency);
       if (ready.length === 0) {
         break;
       }
-      // 3. 派发（并行执行）+ 批次屏障收结果
+      // 4. 派发（并行执行）+ 批次屏障收结果
       for (const node of ready) {
         node.status = 'running';
         node.attempts += 1;
         dispatchOrder.push(node.taskId);
       }
-      await Promise.all(ready.map((node) => this.settle(node, executor)));
+      await this.awaitBatch(ready, executor);
     }
 
     const counts = dag.counts();
     return {
-      status: counts.failed > 0 ? 'failed' : 'completed',
+      status: cancelled
+        ? 'cancelled'
+        : counts.failed > 0
+          ? 'failed'
+          : 'completed',
       nodes: dag.snapshot(),
       dispatchOrder,
       propagation: computePropagation(dag),
       durationMs: Math.round(performance.now() - start),
     };
+  }
+
+  /**
+   * 批次屏障：无 shouldStop = 直接屏障；有则 100ms 轮询——stop
+   * 触发 executor.cancelAll?()（runtime cancel 通道），在行任务
+   * settle 后返回（宪 V：检查点在屏障间，调度决策仍确定）。
+   */
+  private async awaitBatch(
+    ready: DagNode[],
+    executor: TaskExecutor,
+  ): Promise<void> {
+    const batch = Promise.all(ready.map((node) => this.settle(node, executor)));
+    if (this.config.shouldStop === undefined) {
+      await batch;
+      return;
+    }
+    for (;;) {
+      const winner = await Promise.race([
+        batch.then(() => 'done' as const),
+        sleep(100).then(() => 'tick' as const),
+      ]);
+      if (winner === 'done') {
+        return;
+      }
+      if (this.config.shouldStop?.() === true) {
+        await executor.cancelAll?.();
+        await batch; // cancel 使在行任务 settle（迟到结果被丢弃）
+        return;
+      }
+    }
   }
 
   /** settle：成功 → completed；失败且可重试 → pending（下批重试）；否则 failed。异常 ≡ 失败（不击穿）。 */
@@ -144,4 +191,8 @@ function computePropagation(dag: TaskDagImpl): PropagationChain[] {
     }
   }
   return chains;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }

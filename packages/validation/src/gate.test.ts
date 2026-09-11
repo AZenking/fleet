@@ -197,13 +197,17 @@ describe('ValidationReviewGate（SC-003 三路径 + 不变式）', () => {
     expect(gate.packages).toHaveLength(1);
     expect(gate.packages[0]).toMatchObject({ terminal: 'approved', rounds: 0 });
     expect(gate.packages[0]!.verdicts).toHaveLength(1);
-    const types = events.map((event) => event.type);
+    const types = events
+      .map((event) => event.type)
+      .filter((type) => type.startsWith('task.'));
     expect(types).toEqual([
       'task.validation.started',
       'task.validation.completed',
       'task.review.started',
       'task.review.completed',
     ]);
+    // M11 roadmap 别名并行发射
+    expect(events.map((event) => event.type)).toContain('review.approved');
   });
 
   it('一轮修复后通过：验证 fail → 修复 → 验证 pass → 审阅 approved（rounds=1）', async () => {
@@ -242,6 +246,9 @@ describe('ValidationReviewGate（SC-003 三路径 + 不变式）', () => {
     expect(gate.packages[0]!.artifacts).toHaveLength(3);
     expect(
       events.filter((event) => event.type === 'task.review.exceeded'),
+    ).toHaveLength(1);
+    expect(
+      events.filter((event) => event.type === 'review.exceeded'),
     ).toHaveLength(1);
   });
 

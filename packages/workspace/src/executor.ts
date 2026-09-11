@@ -35,6 +35,11 @@ export interface WorkspaceExecutorConfig {
   runId?: string;
   /** M9 验证门（缺省 = M8 auto 处置） */
   gate?: WorkspaceGate;
+  /** M11 事件出口（workspace.created/destroyed——缺省丢弃） */
+  onEvent?: (event: {
+    type: string;
+    payload?: Record<string, unknown>;
+  }) => void;
 }
 
 /** 任务执行结果（scheduler 终态信号扩展：缺省可重试） */
@@ -55,6 +60,11 @@ export class WorkspaceResolvingExecutor implements TaskExecutor {
   /** M10：inner 的预算聚合面透传（RunReport.budget） */
   get budget(): unknown {
     return (this.config.inner as { budget?: unknown }).budget;
+  }
+
+  /** M11：取消转发（在行 runtime cancel 通道） */
+  async cancelAll(): Promise<void> {
+    await this.config.inner.cancelAll?.();
   }
 
   /** cwd 查表面（供 AgentTaskExecutor 的 per-task resolver 绑定） */
@@ -86,6 +96,14 @@ export class WorkspaceResolvingExecutor implements TaskExecutor {
       };
     }
     this.workspaceCwd.set(task.id, workspace.path);
+    this.config.onEvent?.({
+      type: 'workspace.created',
+      payload: {
+        taskId: task.id,
+        path: workspace.path,
+        branch: workspace.branch,
+      },
+    });
 
     let result: ExecutionResult;
     try {
@@ -114,6 +132,13 @@ export class WorkspaceResolvingExecutor implements TaskExecutor {
     }
 
     if (result.ok) {
+      // M11：merge 前捕获完整变更面（diff.patch 落盘原料）
+      let patch = '';
+      try {
+        patch = await this.config.manager.getDiff(workspace);
+      } catch {
+        // diff 失败不阻断处置
+      }
       const merge = await this.config.manager.merge(workspace);
       this.dispositions.push({
         taskId: task.id,
@@ -122,16 +147,31 @@ export class WorkspaceResolvingExecutor implements TaskExecutor {
         ...(merge.kind === 'conflict'
           ? { detail: `冲突文件：${merge.files.join('、')}` }
           : {}),
+        ...(patch.length > 0 ? { patch } : {}),
       });
       // FR-006 处置完整：merged 后清理 worktree（分支随 destroy 删除）；
       // conflict 保留现场供人工处置
       if (merge.kind !== 'conflict') {
-        await this.config.manager.destroy(workspace);
+        const destroyed = await this.config.manager.destroy(workspace);
+        this.config.onEvent?.({
+          type: 'workspace.destroyed',
+          payload: {
+            taskId: task.id,
+            outcome: destroyed.ok ? 'ok' : 'cleanup_partial',
+          },
+        });
       }
       return result;
     }
 
     const destroy = await this.config.manager.destroy(workspace);
+    this.config.onEvent?.({
+      type: 'workspace.destroyed',
+      payload: {
+        taskId: task.id,
+        outcome: destroy.ok ? 'ok' : 'cleanup_partial',
+      },
+    });
     this.dispositions.push({
       taskId: task.id,
       action: 'destroyed',

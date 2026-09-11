@@ -52,6 +52,11 @@ export interface InvestigateOptions {
   wikiGit?: WikiGitPort;
   /** 测试确定性：禁用 rg，直接内置遍历（不算 degraded） */
   forceWalkSearch?: boolean;
+  /** M11 加速器事件出口（缺省丢弃——只补发射点，不改行为） */
+  emitEvent?: (event: {
+    type: string;
+    payload?: Record<string, unknown>;
+  }) => void;
 }
 
 /** 引用级高风险检测对代码与配置文件生效，仅排除纯文档 */
@@ -124,6 +129,17 @@ export async function investigate(
     wikiEvidence = wiki.evidence;
     wikiConflicts = wiki.conflicts;
     pathsUsed.add('wiki');
+    if (wikiConflicts.length > 0) {
+      options.emitEvent?.({
+        type: 'evidence.conflict',
+        payload: { question, count: wikiConflicts.length },
+      });
+    }
+  } else if (wiki.state === 'stale') {
+    options.emitEvent?.({ type: 'wiki.stale', payload: { question } });
+    if (wiki.fallback !== undefined) {
+      fallbacks.push(wiki.fallback);
+    }
   } else if (wiki.fallback !== undefined) {
     fallbacks.push(wiki.fallback);
   }
@@ -137,11 +153,19 @@ export async function investigate(
       detail: 'CodeGraph 不可用（未安装或不可执行）',
       fixSuggestion: '安装 CodeGraph 可加速调查，但不是必需',
     });
+    options.emitEvent?.({
+      type: 'codegraph.fallback',
+      payload: { question, code: 'unavailable' },
+    });
   } else if (!health.initialized) {
     fallbacks.push({
       code: 'stale',
       detail: '仓库未建立 CodeGraph 索引',
       fixSuggestion: '可运行 codegraph init 建立索引（Fleet 不会代为执行）',
+    });
+    options.emitEvent?.({
+      type: 'codegraph.fallback',
+      payload: { question, code: 'uninitialized' },
     });
   } else if (!health.indexFresh) {
     fallbacks.push({

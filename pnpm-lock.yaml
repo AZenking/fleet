@@ -56,6 +56,9 @@ importers:
       '@fleet/mission':
         specifier: workspace:*
         version: link:../../packages/mission
+      '@fleet/observability':
+        specifier: workspace:*
+        version: link:../../packages/observability
       '@fleet/repository':
         specifier: workspace:*
         version: link:../../packages/repository
@@ -196,6 +199,40 @@ importers:
       zod:
         specifier: ^4.5.4
         version: 4.5.4
+    devDependencies:
+      '@types/node':
+        specifier: ^26.5.0
+        version: 26.5.0
+      tsup:
+        specifier: ^8.5.1
+        version: 8.5.1(postcss@8.5.28)(typescript@5.9.3)(yaml@2.9.0)
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
+  packages/observability:
+    dependencies:
+      '@fleet/budget':
+        specifier: workspace:*
+        version: link:../budget
+      '@fleet/core':
+        specifier: workspace:*
+        version: link:../core
+      '@fleet/mission':
+        specifier: workspace:*
+        version: link:../mission
+      '@fleet/scheduler':
+        specifier: workspace:*
+        version: link:../scheduler
+      '@fleet/validation':
+        specifier: workspace:*
+        version: link:../validation
+      '@fleet/workspace':
+        specifier: workspace:*
+        version: link:../workspace
+      execa:
+        specifier: ^10.0.1
+        version: 10.0.1
     devDependencies:
       '@types/node':
         specifier: ^26.5.0

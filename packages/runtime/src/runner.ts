@@ -35,17 +35,59 @@ export interface RunnerOptions {
    * 报告合成 duck-typing 读取 requests/taskTimings/perTaskTimeoutMs。
    */
   makeExecutor?: (mission: Mission) => TaskExecutor;
+  /**
+   * M11 resume：完成集（调度输入裁剪——已完成任务零重跑，
+   * 以 task.skipped(resume) 事件标注）；缺省全新 run。
+   */
+  resume?: { completedTaskIds: string[] };
+  /**
+   * M11 Run 持久化接缝（CLI 注入 @fleet/observability 适配；
+   * 缺省不落盘——库层零回归）。begin 在首个事件前调用。
+   */
+  runPersistence?: RunPersistence;
 }
 
+export interface RunPersistence {
+  /** run 开局：建目录（返回 dir）；在首个事件发射前调用 */
+  begin(mission: Mission, runId: string): string;
+  /** cancel 标记检查（scheduler shouldStop） */
+  isCancelRequested(dir: string): boolean;
+  /** 终局四面落盘（summary/usage/diff/validation） */
+  finalize(dir: string, report: RunReport): void;
+}
+
+/** M11 事件全集（roadmap 命名；mission.run.* 为 M6 兼容别名并行发射） */
 export type MissionRunEvent =
+  | { type: 'mission.created'; runId: string; missionId: string }
+  | { type: 'mission.started'; runId: string; missionId: string }
   | { type: 'mission.run.started'; runId: string; missionId: string }
   | {
-      type: 'mission.run.completed' | 'mission.run.failed';
+      type:
+        | 'mission.completed'
+        | 'mission.failed'
+        | 'mission.cancelled'
+        | 'mission.run.completed'
+        | 'mission.run.failed'
+        | 'mission.run.cancelled';
       runId: string;
       missionId: string;
       taskCount: number;
       failedCount: number;
       durationMs: number;
+    }
+  | { type: 'task.queued'; runId: string; taskId: string }
+  | { type: 'task.started'; runId: string; taskId: string }
+  | {
+      type: 'task.completed' | 'task.failed';
+      runId: string;
+      taskId: string;
+      detail?: string;
+    }
+  | {
+      type: 'task.skipped';
+      runId: string;
+      taskId: string;
+      by: string;
     };
 
 /** 执行器可报告面（AgentTaskExecutor / M6 bridge / M8 装饰器共同形态） */
@@ -59,6 +101,8 @@ interface ExecutorReportFace {
     action: string;
     outcome?: string;
     detail?: string;
+    /** M11：merge 前完整变更面（diff.patch 落盘原料） */
+    patch?: string;
   }>;
   /** M9 验证门报告面（ReviewPackage 数组，结构由 @fleet/validation 定义） */
   reviews?: unknown[];
@@ -81,6 +125,7 @@ export interface RunReport {
     action: string;
     outcome?: string;
     detail?: string;
+    patch?: string;
   }>;
   /** M9：ReviewPackage 数组（每 gated 任务一份——结构见 @fleet/validation） */
   reviews?: unknown[];
@@ -92,6 +137,7 @@ export interface RunReport {
 export type MissionRunOutcome =
   | { kind: 'completed'; report: RunReport }
   | { kind: 'failed'; report: RunReport }
+  | { kind: 'cancelled'; report: RunReport }
   | { kind: 'invalid'; validation: MissionValidationReport };
 
 export async function runMissionFile(
@@ -118,9 +164,28 @@ export async function runMissionFile(
   const emit = options.emitEvent ?? (() => {});
   const startedAt = new Date().toISOString();
   const runId = createId(ID_PREFIXES.run);
+  const runDir = options.runPersistence?.begin(mission, runId);
+  emit({ type: 'mission.created', runId, missionId: mission.id });
+  emit({ type: 'mission.started', runId, missionId: mission.id });
   emit({ type: 'mission.run.started', runId, missionId: mission.id });
 
-  const tasks = mission.tasks ?? [];
+  const allTasks = mission.tasks ?? [];
+  // M11 resume：完成集裁剪——已完成任务零重跑（task.skipped 标注）
+  const completedSet = new Set(options.resume?.completedTaskIds ?? []);
+  for (const task of allTasks) {
+    if (completedSet.has(task.id)) {
+      emit({ type: 'task.skipped', runId, taskId: task.id, by: 'resume' });
+    } else {
+      emit({ type: 'task.queued', runId, taskId: task.id });
+    }
+  }
+  const tasks = allTasks
+    .filter((task) => !completedSet.has(task.id))
+    .map((task) => ({
+      ...task,
+      // 已完成依赖视为满足——从 DAG 输入中剔除（防悬空依赖）
+      dependsOn: task.dependsOn.filter((dep) => !completedSet.has(dep)),
+    }));
   if (tasks.length === 0) {
     const report: RunReport = {
       run: {
@@ -141,6 +206,14 @@ export async function runMissionFile(
       note: 'autonomous mission 无任务——Reason 规划属 M7，本次无可执行内容',
     };
     emit({
+      type: 'mission.completed',
+      runId,
+      missionId: mission.id,
+      taskCount: 0,
+      failedCount: 0,
+      durationMs: 0,
+    });
+    emit({
       type: 'mission.run.completed',
       runId,
       missionId: mission.id,
@@ -152,14 +225,55 @@ export async function runMissionFile(
   }
 
   const dag = buildDag(tasks);
-  const scheduler = new Scheduler(options.schedulerConfig);
-  const executor: TaskExecutor =
+  // M11：cancel 标记 → shouldStop（批次屏障检查点）
+  const schedulerConfig =
+    runDir !== undefined && options.runPersistence !== undefined
+      ? {
+          ...options.schedulerConfig,
+          shouldStop: () => options.runPersistence!.isCancelRequested(runDir),
+        }
+      : options.schedulerConfig;
+  const scheduler = new Scheduler(schedulerConfig);
+  const base: TaskExecutor =
     options.makeExecutor !== undefined ? options.makeExecutor(mission) : bridge;
+  // M11：任务生命周期事件包装（不改 TaskExecutor 契约）
+  const executor: TaskExecutor = {
+    execute: async (task, feedback) => {
+      emit({ type: 'task.started', runId, taskId: task.id });
+      const result = await base.execute(task, feedback);
+      emit(
+        result.ok
+          ? { type: 'task.completed', runId, taskId: task.id }
+          : {
+              type: 'task.failed',
+              runId,
+              taskId: task.id,
+              ...(result.detail !== undefined ? { detail: result.detail } : {}),
+            },
+      );
+      return result;
+    },
+    ...(base.cancelAll !== undefined
+      ? { cancelAll: () => base.cancelAll!() }
+      : {}),
+  };
   const outcome = await scheduler.run(dag, executor);
   const endedAt = new Date().toISOString();
+  // 失败传播 / cancel 清扫的 skipped → 事件
+  for (const node of outcome.nodes) {
+    if (node.status === 'skipped') {
+      emit({
+        type: 'task.skipped',
+        runId,
+        taskId: node.taskId,
+        by: node.skippedBy ?? 'propagation',
+      });
+    }
+  }
 
   const tasksById = new Map(tasks.map((task) => [task.id, task]));
-  const reportFace = executor as ExecutorReportFace;
+  // duck-typing 面读原始执行器（包装器不透传字段）
+  const reportFace = base as ExecutorReportFace;
   const timings = reportFace.taskTimings ?? bridge.taskTimings;
   const taskRuns: TaskRun[] = outcome.nodes.map((node) => {
     const task = tasksById.get(node.taskId);
@@ -205,17 +319,37 @@ export async function runMissionFile(
   const failedCount = outcome.nodes.filter(
     (node) => node.status === 'failed',
   ).length;
+  const terminalType =
+    runStatus === 'completed'
+      ? 'mission.completed'
+      : runStatus === 'cancelled'
+        ? 'mission.cancelled'
+        : 'mission.failed';
+  const legacyType =
+    runStatus === 'completed'
+      ? 'mission.run.completed'
+      : runStatus === 'cancelled'
+        ? 'mission.run.cancelled'
+        : 'mission.run.failed';
   emit({
-    type:
-      runStatus === 'completed'
-        ? 'mission.run.completed'
-        : 'mission.run.failed',
+    type: terminalType,
     runId,
     missionId: mission.id,
     taskCount: tasks.length,
     failedCount,
     durationMs: outcome.durationMs,
   });
+  emit({
+    type: legacyType,
+    runId,
+    missionId: mission.id,
+    taskCount: tasks.length,
+    failedCount,
+    durationMs: outcome.durationMs,
+  });
+  if (runDir !== undefined && options.runPersistence !== undefined) {
+    options.runPersistence.finalize(runDir, report);
+  }
   return { kind: runStatus, report };
 }
 

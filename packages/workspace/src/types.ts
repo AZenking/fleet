@@ -81,6 +81,8 @@ export type WorkspaceDisposition = {
   action: 'merged' | 'destroyed' | 'kept' | 'conflict';
   outcome?: string;
   detail?: string;
+  /** M11：merge 前完整变更面（diff.patch 落盘原料） */
+  patch?: string;
 };
 
 /**

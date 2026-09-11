@@ -321,3 +321,65 @@ describe('M9 终态信号（retryable=false）', () => {
     expect(outcome.nodes.find((node) => node.taskId === 'a')!.attempts).toBe(2);
   });
 });
+
+describe('M11 cancel（shouldStop 检查点）', () => {
+  it('stop 触发：在行任务经 cancelAll settle、未开始 skipped、终态 cancelled', async () => {
+    let stopped = false;
+    const cancelCalls: string[] = [];
+    const startedHang = new Promise<void>((resolveStarted) => {
+      void resolveStarted;
+    });
+    void startedHang;
+    const cancelable = new (class implements TaskExecutor {
+      inflight: Array<() => void> = [];
+      hangStarted?: () => void;
+      async execute(task: Task) {
+        if (task.id === 'hang') {
+          this.hangStarted?.();
+          return new Promise<{ ok: boolean; detail?: string }>((resolve) => {
+            this.inflight.push(() => resolve({ ok: false, detail: '已取消' }));
+          });
+        }
+        return { ok: true };
+      }
+      async cancelAll() {
+        cancelCalls.push('cancelAll');
+        for (const settle of this.inflight.splice(0)) {
+          settle();
+        }
+      }
+    })();
+    const hangBegan = new Promise<void>((resolve) => {
+      cancelable.hangStarted = resolve;
+    });
+    const runPromise = new Scheduler({ shouldStop: () => stopped }).run(
+      buildDag([
+        task('hang'),
+        task('later', ['hang']),
+        task('gated', ['hang']),
+      ]),
+      cancelable,
+    );
+    await hangBegan; // 在行任务确已派发
+    stopped = true;
+    const outcome = await runPromise;
+    expect(cancelCalls).toEqual(['cancelAll']);
+    expect(outcome.status).toBe('cancelled');
+    const map = nodeMap(outcome);
+    // 在行任务经 cancelAll settle（失败→重入队）→ stop 清扫 skipped
+    expect(map.hang).toBe('skipped');
+    for (const node of outcome.nodes) {
+      expect(
+        node.skippedBy === undefined || node.skippedBy === 'cancelled',
+      ).toBe(true);
+    }
+    expect(map.later).toBe('skipped');
+    expect(map.gated).toBe('skipped'); // stop 后未开始任务不开始
+  });
+
+  it('无 shouldStop 回归：默认永不停止', async () => {
+    const executor = new ScriptedExecutor({ script: { a: ['success'] } });
+    const outcome = await new Scheduler().run(buildDag([task('a')]), executor);
+    expect(outcome.status).toBe('completed');
+  });
+});

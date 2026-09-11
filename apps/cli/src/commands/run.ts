@@ -1,3 +1,4 @@
+import path from 'node:path';
 import type { Command } from 'commander';
 
 import {
@@ -33,6 +34,16 @@ import {
   resolveValidationProfile,
 } from '@fleet/validation';
 import { BudgetLedger } from '@fleet/budget';
+import { RealFileSystem } from '@fleet/core';
+import {
+  EventSink,
+  RunStore,
+  isCancelRequested as isCancelRequestedIn,
+  latestRunDir,
+  planResume,
+} from '@fleet/observability';
+import { loadMission } from '@fleet/mission';
+import type { RunPersistence } from '@fleet/runtime';
 import { ContextBuilder, RunArtifactRegistry } from '@fleet/context';
 import type { TaskExecutor } from '@fleet/scheduler';
 import type { ValidationEvent } from '@fleet/validation';
@@ -75,6 +86,10 @@ export function registerRunCommand(program: Command): void {
       '--no-validation-gate',
       '关闭 M9 验证门（回退 M8 auto 处置：成功即合，无独立验证/审阅）',
     )
+    .option(
+      '--resume [runDir]',
+      '续跑中断 run（无参 = 该 mission 最新 run；指纹漂移拒绝）',
+    )
     .action(
       async (
         missionPath: string,
@@ -83,6 +98,7 @@ export function registerRunCommand(program: Command): void {
           runtime?: string[];
           worktree?: boolean;
           validationGate?: boolean;
+          resume?: string | boolean;
         },
       ) => {
         const specs = options.runtime ?? [];
@@ -150,7 +166,33 @@ export function registerRunCommand(program: Command): void {
 
         const useWorktree = options.worktree !== false;
         const useGate = options.validationGate !== false && useWorktree;
-        const emitFleetEvent = (event: { type: string }): void => {
+
+        // M11 事件路由：sink（就绪后流式落盘）+ stderr 双消费
+        const relayBuffer: Array<{
+          type: string;
+          payload?: Record<string, unknown>;
+        }> = [];
+        let sinkEmit:
+          | ((event: {
+              type: string;
+              payload?: Record<string, unknown>;
+            }) => void)
+          | undefined;
+        const routeEvent = (event: {
+          type: string;
+          [key: string]: unknown;
+        }): void => {
+          const plain = {
+            type: event.type,
+            payload: Object.fromEntries(
+              Object.entries(event).filter(([key]) => key !== 'type'),
+            ) as Record<string, unknown>,
+          };
+          if (sinkEmit !== undefined) {
+            sinkEmit(plain);
+          } else {
+            relayBuffer.push(plain);
+          }
           const fleetEvent: FleetEvent = {
             id: newEventId(),
             type: event.type,
@@ -159,8 +201,87 @@ export function registerRunCommand(program: Command): void {
           };
           stderrLogger.debug(serializeEvent(fleetEvent));
         };
+
+        // M11 Run 持久化适配（RunStore + EventSink + cancel 标记）
+        const store = new RunStore(process.cwd());
+        const persistence: RunPersistence = {
+          begin(mission, runId) {
+            const runShort = runId.slice(4, 15);
+            const { dir, eventsPath } = store.beginRun(mission, runShort);
+            const sink = new EventSink(eventsPath);
+            sinkEmit = (event) => sink.emit(event);
+            for (const buffered of relayBuffer.splice(0)) {
+              sinkEmit(buffered);
+            }
+            return dir;
+          },
+          isCancelRequested(dir) {
+            return isCancelRequestedIn(dir);
+          },
+          finalize(dir, report) {
+            const attempts = Object.fromEntries(
+              report.outcome.nodes.map((node) => [node.taskId, node.attempts]),
+            );
+            store.finalize(dir, {
+              summary: {
+                status: report.outcome.status,
+                startedAt: report.run.startedAt ?? '',
+                endedAt: report.run.endedAt ?? '',
+                tasks: report.outcome.nodes.map((node) => ({
+                  taskId: node.taskId,
+                  status: node.status,
+                  attempts: node.attempts,
+                })),
+                ...(report.reviews !== undefined
+                  ? { reviews: report.reviews }
+                  : {}),
+                ...(report.budget !== undefined
+                  ? { budget: report.budget }
+                  : {}),
+                cumulativeAttempts: attempts,
+              },
+              usage: report.budget,
+              validation: report.reviews,
+            });
+            for (const entry of report.workspaces ?? []) {
+              if (entry.action === 'merged' && entry.patch !== undefined) {
+                store.writeDiff(dir, entry.taskId, entry.patch);
+              }
+            }
+          },
+        };
+
+        // M11 resume：完成集裁剪（指纹漂移拒绝）
+        let resumeCompleted: string[] | undefined;
+        if (options.resume !== undefined) {
+          const fsPort = new RealFileSystem();
+          const runDir =
+            typeof options.resume === 'string'
+              ? options.resume
+              : latestRunDir(
+                  process.cwd(),
+                  missionPathToId(missionPath, fsPort),
+                );
+          if (runDir === undefined) {
+            console.error('✗ resume 失败：找不到可续跑的 run 目录');
+            process.exitCode = 1;
+            return;
+          }
+          const plan = planResume(missionPath, runDir, fsPort);
+          if (!plan.ok) {
+            console.log(`✗ resume 拒绝：${plan.reason}`);
+            console.error(`✗ resume 拒绝：${plan.reason}`);
+            process.exitCode = 1;
+            return;
+          }
+          resumeCompleted = plan.completedTaskIds;
+        }
         const outcome = await runMissionFile(missionPath, {
           cwd: process.cwd(),
+          runPersistence: persistence,
+          ...(resumeCompleted !== undefined
+            ? { resume: { completedTaskIds: resumeCompleted } }
+            : {}),
           ...(specs.length === 0 && !useWorktree
             ? { runtime: new FakeRuntimeAdapter() }
             : {
@@ -169,10 +290,15 @@ export function registerRunCommand(program: Command): void {
                     useWorktree,
                     useGate,
                     emitGateEvent: (event: ValidationEvent) =>
-                      emitFleetEvent(event),
+                      routeEvent(event as { type: string }),
+                    emitDomainEvent: (event: {
+                      type: string;
+                      payload?: Record<string, unknown>;
+                    }) => routeEvent(event),
                   }),
               }),
-          emitEvent: (event) => emitFleetEvent(event),
+          emitEvent: (event) =>
+            routeEvent(event as { type: string; [key: string]: unknown }),
         });
 
         if (outcome.kind === 'invalid') {
@@ -185,7 +311,7 @@ export function registerRunCommand(program: Command): void {
           return;
         }
         if (outcome.kind === 'failed') {
-          process.exitCode = 1;
+          process.exitCode = 1; // cancelled ≠ 错误（用户意图，退出 0）
         }
         print(
           options.json === true,
@@ -216,7 +342,10 @@ function renderInvalid(
   return lines.join('\n');
 }
 
-function renderReport(kind: 'completed' | 'failed', report: RunReport): string {
+function renderReport(
+  kind: 'completed' | 'failed' | 'cancelled',
+  report: RunReport,
+): string {
   const run = report.run;
   const runtimeText =
     report.runtime.runtimes !== undefined
@@ -289,7 +418,9 @@ function renderReport(kind: 'completed' | 'failed', report: RunReport): string {
   lines.push(
     kind === 'completed'
       ? `✓ mission completed · 总耗时 ${report.outcome.durationMs}ms · runId ${run.id.slice(0, 17)}…`
-      : `✗ mission failed · 总耗时 ${report.outcome.durationMs}ms · runId ${run.id.slice(0, 17)}…`,
+      : kind === 'cancelled'
+        ? `⏸ mission cancelled · 总耗时 ${report.outcome.durationMs}ms · runId ${run.id.slice(0, 17)}…`
+        : `✗ mission failed · 总耗时 ${report.outcome.durationMs}ms · runId ${run.id.slice(0, 17)}…`,
   );
   return lines.join('\n');
 }
@@ -302,6 +433,10 @@ function buildExecutor(
     useWorktree: boolean;
     useGate: boolean;
     emitGateEvent: (event: ValidationEvent) => void;
+    emitDomainEvent: (event: {
+      type: string;
+      payload?: Record<string, unknown>;
+    }) => void;
   },
 ): TaskExecutor {
   const registry = RuntimeRegistry.fromSpec(specs);
@@ -318,6 +453,7 @@ function buildExecutor(
         registry: new RunArtifactRegistry(),
         ledger: new BudgetLedger(),
         mission,
+        onEvent: options.emitDomainEvent,
       },
     });
   }
@@ -339,11 +475,14 @@ function buildExecutor(
         registry: artifactRegistry,
         ledger,
         mission,
+        onEvent: options.emitDomainEvent,
       },
     }),
     manager,
     repoRoot: process.cwd(),
-    runId: `run_ws_${mission.id}`,
+    // runShort（8 位截断）需含唯一尾——pid36 进前 8 位（跨 run 分支防碰撞，M11 resume 语义）
+    runId: `run_${mission.id.slice(0, 3)}-${process.pid.toString(36)}`,
+    onEvent: options.emitDomainEvent,
     ...(options.useGate
       ? {
           gate: new ValidationReviewGate({
@@ -359,7 +498,8 @@ function buildExecutor(
             }),
             profile: resolveValidationProfile(mission, process.cwd()),
             mission,
-            runId: `run_ws_${mission.id}`,
+            // runShort（8 位截断）需含唯一尾——pid36 进前 8 位（跨 run 分支防碰撞，M11 resume 语义）
+            runId: `run_${mission.id.slice(0, 3)}-${process.pid.toString(36)}`,
             emitEvent: options.emitGateEvent,
           }),
         }
@@ -368,4 +508,14 @@ function buildExecutor(
   wrapperRef.current = wrapper;
   void permissionOf;
   return wrapper;
+}
+
+/** mission 文件 → mission id（resume 缺省目标定位） */
+function missionPathToId(missionPath: string, fs: RealFileSystem): string {
+  try {
+    return loadMission(fs.readFile(missionPath), { sourcePath: missionPath })
+      .id;
+  } catch {
+    return path.basename(missionPath).replace(/\.ya?ml$/, '');
+  }
 }

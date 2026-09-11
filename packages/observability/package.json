@@ -1,37 +1,34 @@
 {
-  "name": "@fleet/cli",
+  "name": "@fleet/observability",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "fleet 命令行工具",
-  "engines": {
-    "node": ">=24"
+  "description": "Fleet 可观测层：Run 持久化（.fleet/runs/）+ 事件流视图重建 + Resume + 孤儿清理",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
   },
-  "bin": {
-    "fleet": "./dist/bin.js"
-  },
-  "main": "./dist/bin.js",
-  "types": "./dist/bin.d.ts",
   "files": [
     "dist"
   ],
   "scripts": {
     "build": "tsup",
-    "test": "vitest run --project cli-e2e"
+    "test": "vitest run --project observability"
   },
   "dependencies": {
-    "@fleet/agents": "workspace:*",
     "@fleet/budget": "workspace:*",
-    "@fleet/context": "workspace:*",
     "@fleet/core": "workspace:*",
     "@fleet/mission": "workspace:*",
-    "@fleet/observability": "workspace:*",
-    "@fleet/repository": "workspace:*",
-    "@fleet/runtime": "workspace:*",
     "@fleet/scheduler": "workspace:*",
     "@fleet/validation": "workspace:*",
     "@fleet/workspace": "workspace:*",
-    "commander": "^15.0.0"
+    "execa": "^10.0.1"
   },
   "devDependencies": {
     "@types/node": "^26.5.0",

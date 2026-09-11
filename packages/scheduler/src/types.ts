@@ -72,7 +72,11 @@ export interface PropagationChain {
   skipped: string[];
 }
 
-export const runOutcomeStatusSchema = z.enum(['completed', 'failed']);
+export const runOutcomeStatusSchema = z.enum([
+  'completed',
+  'failed',
+  'cancelled',
+]);
 export type RunOutcomeStatus = z.infer<typeof runOutcomeStatusSchema>;
 
 export interface RunOutcome {
@@ -104,4 +108,9 @@ export interface TaskExecutionResult {
  */
 export interface TaskExecutor {
   execute(task: Task, feedback?: string): Promise<TaskExecutionResult>;
+  /**
+   * M11 可选端口：取消全部在行执行（cancel 通道——实现方对
+   * in-flight runId 调 runtime.cancel；缺省无实现 = 不可取消）
+   */
+  cancelAll?(): Promise<void>;
 }
