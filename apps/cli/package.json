@@ -24,6 +24,7 @@
     "@fleet/budget": "workspace:*",
     "@fleet/context": "workspace:*",
     "@fleet/core": "workspace:*",
+    "@fleet/mcp": "workspace:*",
     "@fleet/mission": "workspace:*",
     "@fleet/observability": "workspace:*",
     "@fleet/repository": "workspace:*",

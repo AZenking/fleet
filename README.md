@@ -153,7 +153,7 @@ pnpm fleet wiki query "调查链路在哪个包"     # 全文检索 + 可解释�
 ```text
 apps/cli/               fleet 命令行（doctor / version / repo investigate /
                         wiki / mission / run + ps / status / logs / inspect /
-                        diff / cancel / clean / --resume）
+                        diff / cancel / clean / --resume + mcp repo|fleet）
 packages/core/          共享基础能力：config / errors / events / fs / git /
                         ids / logging / probe / diagnostics
 packages/repository/    Repository Intelligence：codegraph 适配层 +
@@ -182,6 +182,9 @@ packages/budget/        Fleet 预算层：Token 估算口径 + UsageRecord
                         三级聚合（Agent/Task/Mission）+ 优化收益
 packages/observability/ Fleet 可观测层：Run 持久化（.fleet/runs/）
                         + 事件流视图重建 + Resume + 孤儿清理
+packages/mcp/          Fleet MCP 暴露层：零依赖 stdio JSON-RPC
+                        协议 + Repository Intelligence 七工具 +
+                        Fleet 五工具
 configs/                fleet.yaml（仓库级 Fleet 配置）
 missions/               mission 文件（demo.yaml 为活样例）
 tests/cli/              CLI 进程级 e2e
@@ -205,6 +208,8 @@ specs/                  Spec Kit 规格与设计文档
 - M9 规格：[specs/010-m9-validation-review-loop/spec.md](specs/010-m9-validation-review-loop/spec.md)
 - M10 规格：[specs/011-m10-context-budget/spec.md](specs/011-m10-context-budget/spec.md)
 - M11 规格：[specs/012-m11-observability-recovery/spec.md](specs/012-m11-observability-recovery/spec.md)
+- M12 规格：[specs/013-m12-mcp-exposure/spec.md](specs/013-m12-mcp-exposure/spec.md)
+- Control Center 决策：[docs/control-center.md](docs/control-center.md)
 - 项目宪法：`.specify/memory/constitution.md`
 
 ## 质量门

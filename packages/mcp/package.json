@@ -1,0 +1,36 @@
+{
+  "name": "@fleet/mcp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Fleet MCP 暴露层：零依赖 stdio JSON-RPC 协议循环 + Repository Intelligence / Fleet 工具装配",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest run --project mcp"
+  },
+  "dependencies": {
+    "@fleet/core": "workspace:*",
+    "@fleet/mission": "workspace:*",
+    "@fleet/observability": "workspace:*",
+    "@fleet/repository": "workspace:*",
+    "@fleet/runtime": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^26.5.0",
+    "tsup": "^8.5.1",
+    "typescript": "^5.9.3"
+  }
+}
