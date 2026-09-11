@@ -1,0 +1,39 @@
+# demo mission —— fleet mission validate 的活样例（文档 / 夹具 / CI 冒烟三用）
+# 格式契约：specs/005-m4-core-domain/contracts/mission-file.md
+id: demo-mission
+goal: 为 CLI 增加 mission 校验能力并保持质量门全绿
+planningMode: execution
+
+requirements:
+  - id: req-schema
+    text: 提供完整实体 schema 与逐字段校验
+  - id: req-cli
+    text: 提供 fleet mission validate 命令
+
+constraints:
+  - kind: maxDurationMs
+    value: 3600000
+  - kind: maxTokens
+    value: 500000
+
+plan:
+  summary: 复用 config 加载模式新建 packages/mission
+  rationale: 已在 Codex Desktop 确认（2026-09-11 会话）
+
+tasks:
+  - id: define-schema
+    goal: 定义全部实体 Zod schema 与语义校验
+    agentRole: reason
+    dependsOn: []
+  - id: wire-cli
+    goal: 注册 fleet mission validate 命令与渲染
+    agentRole: reason
+    dependsOn: [define-schema]
+
+acceptance:
+  - given: 仓库处于 M3 完成状态
+    when: 运行 fleet mission validate missions/demo.yaml
+    then: 退出码 0 且输出摘要
+  - given: 注入任一故障矩阵场景的文件
+    when: 运行校验
+    then: 退出码 1 且逐条列出含字段路径的错误

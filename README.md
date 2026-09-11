@@ -5,9 +5,9 @@ Reflex / Focus / Reason / Insight / Wisdom 五个认知角色完成实现、验�
 Review。Codex Desktop 负责需求讨论与最终审阅，Repository Intelligence
 负责大仓库的高效理解。
 
-当前进度：**Phase A（Repository Intelligence 0.1）已交付**——
-M0 工程基线 / M1 CodeGraph + Fallback / M2 LLM Wiki / M3 Evidence
-System（findings 证据链 + FAST/VERIFY 模式 + 冲突裁决）。
+当前进度：**Phase A（Repository Intelligence 0.1）已交付**，Phase B
+（Fleet Kernel）进行中——M0 工程基线 / M1 CodeGraph + Fallback /
+M2 LLM Wiki / M3 Evidence System / M4 Core Domain（mission 校验）。
 
 ## 要求
 
@@ -73,6 +73,27 @@ pnpm fleet repo investigate "认证 login 流程" --mode fast         # 快速�
 - 验证手册：[specs/002-m1-codegraph-fallback/quickstart.md](specs/002-m1-codegraph-fallback/quickstart.md)（M1）/
   [specs/004-m3-evidence-system/quickstart.md](specs/004-m3-evidence-system/quickstart.md)（M3）
 
+## fleet mission validate
+
+Fleet Kernel 的输入契约：mission 文件（goal / requirements /
+constraints / acceptance / planningMode / tasks）逐字段校验——
+合法输出摘要；非法**一次报出全部错误**（字段路径 + 期望 + 实际 +
+修复提示），拼写错误的未知字段直接拒绝。
+
+```bash
+pnpm fleet mission validate missions/demo.yaml          # 文本摘要
+pnpm fleet mission validate missions/demo.yaml --json   # 结构化报告
+```
+
+- planningMode 语义（宪法 V 输入契约）：`execution`（方案已在
+  Codex Desktop 确认）必须携带 plan 与非空 tasks，Reason 后续不得
+  推翻；`autonomous` 只有 requirements 也合法（Reason 规划产生任务）。
+- 两层校验：Zod 结构层（类型/枚举/未知字段）+ 语义层（task id
+  唯一 / dependsOn 引用闭合且不自环 / execution 完备性）。
+- 文件格式契约：[specs/005-m4-core-domain/contracts/mission-file.md](specs/005-m4-core-domain/contracts/mission-file.md)；
+  活样例 `missions/demo.yaml`。
+- 验证手册：[specs/005-m4-core-domain/quickstart.md](specs/005-m4-core-domain/quickstart.md)
+
 ## fleet wiki
 
 仓库持久知识层（LLM Wiki）：`.fleet/wiki/` 下的 Markdown 知识库，
@@ -101,14 +122,17 @@ pnpm fleet wiki query "调查链路在哪个包"     # 全文检索 + 可解释�
 ## 仓库结构
 
 ```text
-apps/cli/               fleet 命令行（doctor / version / repo investigate / wiki）
+apps/cli/               fleet 命令行（doctor / version / repo investigate / wiki / mission）
 packages/core/          共享基础能力：config / errors / events / fs / git /
                         ids / logging / probe / diagnostics
 packages/repository/    Repository Intelligence：codegraph 适配层 +
                         原生回退（search / source / git）+ investigate 编排 +
                         wiki（格式层 / 生成 / 校验 / 状态 / 更新 / 检索）+
                         evidence（findings / 模式裁决 / 置信度 / 冲突）
+packages/mission/       Fleet Kernel 任务域：Mission/Task/Artifact/Run
+                        实体 schema + 两层校验（loader + semantic）
 configs/                fleet.yaml（仓库级 Fleet 配置）
+missions/               mission 文件（demo.yaml 为活样例）
 tests/cli/              CLI 进程级 e2e
 tests/fixtures/         调查夹具仓库（sample-repo）
 specs/                  Spec Kit 规格与设计文档
@@ -122,6 +146,7 @@ specs/                  Spec Kit 规格与设计文档
 - M1 规格：[specs/002-m1-codegraph-fallback/spec.md](specs/002-m1-codegraph-fallback/spec.md)
 - M2 规格：[specs/003-m2-llm-wiki/spec.md](specs/003-m2-llm-wiki/spec.md)
 - M3 规格：[specs/004-m3-evidence-system/spec.md](specs/004-m3-evidence-system/spec.md)
+- M4 规格：[specs/005-m4-core-domain/spec.md](specs/005-m4-core-domain/spec.md)
 - 项目宪法：`.specify/memory/constitution.md`
 
 ## 质量门

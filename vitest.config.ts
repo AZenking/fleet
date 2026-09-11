@@ -17,6 +17,12 @@ export default defineConfig({
       },
       {
         test: {
+          name: 'mission',
+          include: ['packages/mission/src/**/*.test.ts'],
+        },
+      },
+      {
+        test: {
           name: 'cli-e2e',
           include: ['tests/cli/**/*.test.ts'],
           testTimeout: 120_000,
