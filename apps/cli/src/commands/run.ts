@@ -26,15 +26,24 @@ import {
   GitWorktreeManager,
   WorkspaceResolvingExecutor,
 } from '@fleet/workspace';
+import {
+  AgentReviewer,
+  ValidationReviewGate,
+  ValidationRunner,
+  resolveValidationProfile,
+} from '@fleet/validation';
 import type { TaskExecutor } from '@fleet/scheduler';
+import type { ValidationEvent } from '@fleet/validation';
 import { permissionOf } from '@fleet/runtime';
 
 /**
- * fleet run — 执行 mission（contracts/cli.md，M6/M7）。
+ * fleet run — 执行 mission（contracts/cli.md，M6/M7/M8/M9）。
  * 退出码：0 completed（含 autonomous note 态）；1 failed / 文件或
  * 校验错误 / 显式运行时不可用；2 用法错误。
  * --runtime：name（全体）或 role=name（单角色覆盖），可重复；
  * 缺省全 Fake。显式指定的真实运行时不可用 → 报错，不静默降级。
+ * M9：--no-validation-gate 关闭验证门（回退 M8 auto 处置）；
+ * 门默认开且仅 worktree 模式生效（--no-worktree = M7 直通）。
  */
 
 const ALL_ROLES: readonly AgentRole[] = [
@@ -60,10 +69,19 @@ export function registerRunCommand(program: Command): void {
       '--no-worktree',
       '关闭 worktree 物理隔离（写角色直接在主仓根执行——回到 M7 行为）',
     )
+    .option(
+      '--no-validation-gate',
+      '关闭 M9 验证门（回退 M8 auto 处置：成功即合，无独立验证/审阅）',
+    )
     .action(
       async (
         missionPath: string,
-        options: { json?: boolean; runtime?: string[]; worktree?: boolean },
+        options: {
+          json?: boolean;
+          runtime?: string[];
+          worktree?: boolean;
+          validationGate?: boolean;
+        },
       ) => {
         const specs = options.runtime ?? [];
 
@@ -129,23 +147,30 @@ export function registerRunCommand(program: Command): void {
         }
 
         const useWorktree = options.worktree !== false;
+        const useGate = options.validationGate !== false && useWorktree;
+        const emitFleetEvent = (event: { type: string }): void => {
+          const fleetEvent: FleetEvent = {
+            id: newEventId(),
+            type: event.type,
+            timestamp: new Date().toISOString(),
+            payload: { ...event, type: undefined },
+          };
+          stderrLogger.debug(serializeEvent(fleetEvent));
+        };
         const outcome = await runMissionFile(missionPath, {
           cwd: process.cwd(),
           ...(specs.length === 0 && !useWorktree
             ? { runtime: new FakeRuntimeAdapter() }
             : {
                 makeExecutor: (mission: Mission) =>
-                  buildExecutor(mission, specs, useWorktree),
+                  buildExecutor(mission, specs, {
+                    useWorktree,
+                    useGate,
+                    emitGateEvent: (event: ValidationEvent) =>
+                      emitFleetEvent(event),
+                  }),
               }),
-          emitEvent: (event) => {
-            const fleetEvent: FleetEvent = {
-              id: newEventId(),
-              type: event.type,
-              timestamp: new Date().toISOString(),
-              payload: { ...event, type: undefined },
-            };
-            stderrLogger.debug(serializeEvent(fleetEvent));
-          },
+          emitEvent: (event) => emitFleetEvent(event),
         });
 
         if (outcome.kind === 'invalid') {
@@ -224,6 +249,30 @@ function renderReport(kind: 'completed' | 'failed', report: RunReport): string {
       `  传播：${chain.failedTaskId} 失败 → ${chain.skipped.join('、')} 跳过`,
     );
   }
+  if (report.reviews !== undefined) {
+    lines.push('  验证门：');
+    for (const entry of report.reviews) {
+      const review = entry as {
+        taskId: string;
+        terminal: string;
+        rounds: number;
+        maxReviewLoops: number;
+        verdicts?: Array<{ verdict: string }>;
+      };
+      const last = review.verdicts?.at(-1)?.verdict ?? '—';
+      lines.push(
+        `    ${review.taskId.padEnd(20)} ${review.terminal} · 修复 ${review.rounds}/${review.maxReviewLoops} 轮 · 末次审阅 ${last}`,
+      );
+    }
+  }
+  if (report.workspaces !== undefined) {
+    lines.push('  工作区：');
+    for (const ws of report.workspaces) {
+      lines.push(
+        `    ${ws.taskId.padEnd(20)} ${ws.action}${ws.outcome !== undefined ? `（${ws.outcome}）` : ''}${ws.detail !== undefined ? ` ${ws.detail}` : ''}`,
+      );
+    }
+  }
   lines.push(
     kind === 'completed'
       ? `✓ mission completed · 总耗时 ${report.outcome.durationMs}ms · runId ${run.id.slice(0, 17)}…`
@@ -232,14 +281,18 @@ function renderReport(kind: 'completed' | 'failed', report: RunReport): string {
   return lines.join('\n');
 }
 
-/** M8 装配：worktree 集成（写角色建区/处置）或 M7 直通 */
+/** M8/M9 装配：worktree 集成（写角色建区/处置）+ 验证门（可选）或 M7 直通 */
 function buildExecutor(
   mission: Mission,
   specs: string[],
-  useWorktree: boolean,
+  options: {
+    useWorktree: boolean;
+    useGate: boolean;
+    emitGateEvent: (event: ValidationEvent) => void;
+  },
 ): TaskExecutor {
   const registry = RuntimeRegistry.fromSpec(specs);
-  if (!useWorktree) {
+  if (!options.useWorktree) {
     return new AgentTaskExecutor({
       registry,
       cwd: process.cwd(),
@@ -261,6 +314,24 @@ function buildExecutor(
     manager,
     repoRoot: process.cwd(),
     runId: `run_ws_${mission.id}`,
+    ...(options.useGate
+      ? {
+          gate: new ValidationReviewGate({
+            runner: new ValidationRunner({
+              manager,
+              profile: resolveValidationProfile(mission, process.cwd()),
+            }),
+            reviewer: new AgentReviewer({
+              adapter: registry.resolve('wisdom'),
+              repoRoot: process.cwd(),
+            }),
+            profile: resolveValidationProfile(mission, process.cwd()),
+            missionGoal: mission.goal,
+            runId: `run_ws_${mission.id}`,
+            emitEvent: options.emitGateEvent,
+          }),
+        }
+      : {}),
   });
   wrapperRef.current = wrapper;
   void permissionOf;

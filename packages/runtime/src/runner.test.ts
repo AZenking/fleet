@@ -6,6 +6,7 @@ import { runSchema, taskRunSchema } from '@fleet/mission';
 import { MissionRuntimeBridge } from './bridge.js';
 import { FakeRuntimeAdapter } from './fake.js';
 import { runMissionFile, type MissionRunEvent } from './runner.js';
+import type { TaskExecutor } from '@fleet/scheduler';
 
 /**
  * US3：桥接规则与 runner 编排（tasks.md T010/T011）。
@@ -248,5 +249,48 @@ acceptance:
       fs: new MemoryFileSystem(),
     });
     expect(outcome.kind).toBe('invalid');
+  });
+});
+
+describe('M9 RunReport.reviews（duck-typing 合成）', () => {
+  it('执行器带 reviews 面 → 透传进报告；缺省不影响既有报告', async () => {
+    const yaml = missionYaml({ tasks: taskYaml('a') });
+    const fs = fsWith(yaml);
+    const reviewPackage = {
+      taskId: 'a',
+      terminal: 'approved',
+      rounds: 0,
+      maxReviewLoops: 2,
+      artifacts: [],
+      verdicts: [],
+      diffStat: { files: 1, insertions: 1, deletions: 0 },
+    };
+    const reportingExecutor = {
+      reviews: [reviewPackage],
+      taskTimings: new Map(),
+      perTaskTimeoutMs: new Map(),
+      async execute() {
+        return { ok: true };
+      },
+    } as TaskExecutor & { reviews: unknown[] };
+    const withReviews = await runMissionFile('/repo/missions/demo.yaml', {
+      fs,
+      cwd: '/repo',
+      makeExecutor: () => reportingExecutor,
+    });
+    expect(withReviews.kind).toBe('completed');
+    if (withReviews.kind === 'completed') {
+      expect(withReviews.report.reviews).toEqual([reviewPackage]);
+    }
+
+    const without = await runMissionFile('/repo/missions/demo.yaml', {
+      fs,
+      cwd: '/repo',
+    });
+    expect(without.kind).toBe('completed');
+    if (without.kind === 'completed') {
+      expect(without.report.reviews).toBeUndefined();
+      expect(without.report.workspaces).toBeUndefined();
+    }
   });
 });

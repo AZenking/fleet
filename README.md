@@ -170,6 +170,9 @@ packages/agents/        Fleet 认知角色层：五角色定义 + 权限矩阵
 packages/workspace/     Fleet 物理工作区层：Git Worktree 隔离
                         （create/diff/merge/destroy）+ 处置装饰器 +
                         孤儿检测与最小清理
+packages/validation/    Fleet 独立验收层：Validation Runner
+                        （diff/lint/typecheck/tests）+ Wisdom 审阅
+                        循环（maxReviewLoops 上限强制）+ 验证门
 configs/                fleet.yaml（仓库级 Fleet 配置）
 missions/               mission 文件（demo.yaml 为活样例）
 tests/cli/              CLI 进程级 e2e
@@ -190,6 +193,7 @@ specs/                  Spec Kit 规格与设计文档
 - M6 规格：[specs/007-m6-runtime-fake-agents/spec.md](specs/007-m6-runtime-fake-agents/spec.md)
 - M7 规格：[specs/008-m7-agents-real-runtime/spec.md](specs/008-m7-agents-real-runtime/spec.md)
 - M8 规格：[specs/009-m8-workspace-worktree/spec.md](specs/009-m8-workspace-worktree/spec.md)
+- M9 规格：[specs/010-m9-validation-review-loop/spec.md](specs/010-m9-validation-review-loop/spec.md)
 - 项目宪法：`.specify/memory/constitution.md`
 
 ## 质量门

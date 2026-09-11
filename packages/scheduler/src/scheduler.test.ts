@@ -4,6 +4,7 @@ import type { Task } from '@fleet/mission';
 
 import { buildDag } from './dag.js';
 import { Scheduler, type SchedulerConfig } from './scheduler.js';
+import type { TaskExecutionResult, TaskExecutor } from './types.js';
 import { ScriptedExecutor } from './test-kit.js';
 import { resolveSchedulerConfig } from './config.js';
 
@@ -284,5 +285,39 @@ describe('SC-006：确定性（双跑逐项一致）', () => {
     expect(second.dispatchOrder).toEqual(first.dispatchOrder);
     expect(second.propagation).toEqual(first.propagation);
     expect(nodeMap(second)).toEqual(nodeMap(first));
+  });
+});
+
+describe('M9 终态信号（retryable=false）', () => {
+  it('确定性结论不重试：失败 1 次即终态 failed（attempts=1）', async () => {
+    const executor = new ScriptedExecutor({ script: { a: ['failure'] } });
+    const terminal = new (class implements TaskExecutor {
+      calls = 0;
+      execute(): Promise<TaskExecutionResult> {
+        this.calls += 1;
+        return Promise.resolve({
+          ok: false,
+          detail: 'review_exceeded：审阅轮次耗尽',
+          retryable: false,
+        });
+      }
+    })();
+    const outcome = await new Scheduler().run(buildDag([task('a')]), terminal);
+    expect(outcome.status).toBe('failed');
+    expect(terminal.calls).toBe(1); // 不重试——重试不改判
+    const a = outcome.nodes.find((node) => node.taskId === 'a')!;
+    expect(a.status).toBe('failed');
+    expect(a.attempts).toBe(1);
+    expect(a.failureReason).toContain('review_exceeded');
+    void executor;
+  });
+
+  it('缺省失败照旧重试（回归：retry+1 次）', async () => {
+    const executor = new ScriptedExecutor({
+      script: { a: ['failure', 'failure'] },
+    });
+    const outcome = await new Scheduler().run(buildDag([task('a')]), executor);
+    expect(executor.callsOf('a')).toBe(2);
+    expect(outcome.nodes.find((node) => node.taskId === 'a')!.attempts).toBe(2);
   });
 });

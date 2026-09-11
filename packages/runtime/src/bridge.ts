@@ -43,7 +43,10 @@ export class MissionRuntimeBridge implements TaskExecutor {
     private readonly budget: MissionBudget = {},
   ) {}
 
-  async execute(task: Task): Promise<{ ok: boolean; detail?: string }> {
+  async execute(
+    task: Task,
+    feedback?: string,
+  ): Promise<{ ok: boolean; detail?: string }> {
     const runId = createId(ID_PREFIXES.run); // 每次执行唯一（重试 = 新 runId）
     const timeoutMs = this.timeoutFor(task);
     this.requests.push({ runId, taskId: task.id });
@@ -54,7 +57,9 @@ export class MissionRuntimeBridge implements TaskExecutor {
         runId,
         agentId: `agent:${task.id}`,
         cwd: this.config.cwd,
-        prompt: `[任务 ${task.id}] ${task.goal}`,
+        prompt: `[任务 ${task.id}] ${task.goal}${
+          feedback !== undefined ? `\n[修复反馈] ${feedback}` : ''
+        }`,
         env: {
           FLEET_AGENT_ROLE: task.agentRole,
           [REQUEST_PERMISSION_ENV]: permissionOf(task.agentRole),

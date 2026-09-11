@@ -60,6 +60,8 @@ interface ExecutorReportFace {
     outcome?: string;
     detail?: string;
   }>;
+  /** M9 验证门报告面（ReviewPackage 数组，结构由 @fleet/validation 定义） */
+  reviews?: unknown[];
 }
 
 export interface RunReport {
@@ -78,6 +80,8 @@ export interface RunReport {
     outcome?: string;
     detail?: string;
   }>;
+  /** M9：ReviewPackage 数组（每 gated 任务一份——结构见 @fleet/validation） */
+  reviews?: unknown[];
   note?: string;
 }
 
@@ -188,6 +192,9 @@ export async function runMissionFile(
     },
     ...(reportFace.dispositions !== undefined
       ? { workspaces: reportFace.dispositions }
+      : {}),
+    ...(reportFace.reviews !== undefined
+      ? { reviews: reportFace.reviews }
       : {}),
   };
   const failedCount = outcome.nodes.filter(

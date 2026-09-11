@@ -68,6 +68,12 @@ export class Scheduler {
         node.status = 'completed';
         return;
       }
+      // M9 终态信号：确定性结论不重试（重试不改判，防轮次预算翻倍）
+      if (result.retryable === false) {
+        node.status = 'failed';
+        node.failureReason = result.detail ?? '执行失败（终态，不可重试）';
+        return;
+      }
       this.recordFailure(node, result.detail ?? '执行失败');
     } catch (error) {
       this.recordFailure(

@@ -45,7 +45,10 @@ export class AgentTaskExecutor implements TaskExecutor {
 
   constructor(private readonly config: AgentExecutorConfig) {}
 
-  async execute(task: Task): Promise<{ ok: boolean; detail?: string }> {
+  async execute(
+    task: Task,
+    feedback?: string,
+  ): Promise<{ ok: boolean; detail?: string }> {
     const definition = getAgentDefinition(task.agentRole);
     const permission = permissionOf(task.agentRole); // 必经 Tool Policy
     const runtime = this.config.registry.resolve(task.agentRole);
@@ -58,7 +61,9 @@ export class AgentTaskExecutor implements TaskExecutor {
         typeof this.config.cwd === 'function'
           ? this.config.cwd(task)
           : this.config.cwd,
-      prompt: `[${definition.role} · ${permission}] ${definition.systemPromptSegment}\n[任务 ${task.id}] ${task.goal}`,
+      prompt: `[${definition.role} · ${permission}] ${definition.systemPromptSegment}\n[任务 ${task.id}] ${task.goal}${
+        feedback !== undefined ? `\n[修复反馈] ${feedback}` : ''
+      }`,
       env: {
         [REQUEST_ROLE_ENV]: task.agentRole,
         [REQUEST_PERMISSION_ENV]: permission,

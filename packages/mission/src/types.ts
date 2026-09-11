@@ -71,6 +71,24 @@ export type Task = z.infer<typeof taskSchema>;
 export const planningModeSchema = z.enum(['autonomous', 'execution']);
 export type PlanningMode = z.infer<typeof planningModeSchema>;
 
+/**
+ * M9 验收策略配置：显式命令 = 必选（失败即 fail）；缺省由
+ * ValidationProfile 自动探测（package.json scripts）。缺省值
+ * （超时 / maxReviewLoops）在运行时解析，不进 schema——宪法
+ * 默认 maxReviewLoops = 2 的单一来源在 @fleet/validation。
+ */
+export const validationConfigSchema = z.strictObject({
+  commands: z
+    .strictObject({
+      lint: z.string().min(1).optional(),
+      typecheck: z.string().min(1).optional(),
+      tests: z.string().min(1).optional(),
+    })
+    .optional(),
+  timeoutMs: z.number().int().positive().optional(),
+});
+export type ValidationConfig = z.infer<typeof validationConfigSchema>;
+
 export const missionSchema = z.strictObject({
   id: z.string().regex(ID_PATTERN),
   goal: z.string().min(1),
@@ -80,6 +98,8 @@ export const missionSchema = z.strictObject({
   acceptance: z.array(acceptanceCriteriaSchema).min(1),
   plan: planSchema.optional(),
   tasks: z.array(taskSchema).optional(),
+  validation: validationConfigSchema.optional(),
+  maxReviewLoops: z.number().int().nonnegative().optional(),
 });
 export type Mission = z.infer<typeof missionSchema>;
 

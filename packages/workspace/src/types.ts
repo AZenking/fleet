@@ -6,6 +6,8 @@
  * 结构化（code + detail），零崩溃零主仓污染。
  */
 
+import type { Task } from '@fleet/mission';
+
 export const WORKSPACE_STATUSES = [
   'active',
   'merged',
@@ -80,3 +82,45 @@ export type WorkspaceDisposition = {
   outcome?: string;
   detail?: string;
 };
+
+/**
+ * M9 验证门端口：生命周期（worktree 创建/处置）留 workspace，
+ * 判定（验证/审阅/循环）归 gate 实现（@fleet/validation）。端口
+ * 放生命周期所有方——与 scheduler 持有 TaskExecutor 同一模式。
+ */
+export interface GateEvaluation {
+  task: Task;
+  workspace: Workspace;
+  /** 首跑实现结果（ok=false → gate 应直接 fix_failed，M5 语义） */
+  execution: { ok: boolean; detail?: string };
+  /** 修复轮次入口：inner 二次执行（反馈 = 验证失败摘要 / 审阅意见） */
+  reexecute: (feedback: string) => Promise<{ ok: boolean; detail?: string }>;
+}
+
+export const GATE_OUTCOMES = [
+  'approved',
+  'review_exceeded',
+  'review_error',
+  'fix_failed',
+] as const;
+export type GateOutcome = (typeof GATE_OUTCOMES)[number];
+
+export interface GateDecision {
+  pass: boolean;
+  outcome: GateOutcome;
+  detail?: string;
+  /**
+   * false = 确定性终态结论（scheduler 不重试——重试不改判，
+   * 防止轮次预算被 M5 retry 翻倍，research.md D3）
+   */
+  retryable?: boolean;
+}
+
+/** gate 报告面（结构化形态由实现方定义；runner duck-typing 合成） */
+export interface GateReportFace {
+  readonly packages: unknown[];
+}
+
+export interface WorkspaceGate extends GateReportFace {
+  evaluate(evaluation: GateEvaluation): Promise<GateDecision>;
+}

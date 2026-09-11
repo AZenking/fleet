@@ -87,13 +87,21 @@ export interface RunOutcome {
 export interface TaskExecutionResult {
   ok: boolean;
   detail?: string;
+  /**
+   * M9 终态信号：false = 确定性结论（审阅裁决等）——重试不改判，
+   * scheduler 直接 failed 不重入队；缺省 true（瞬时故障语义不变）
+   */
+  retryable?: boolean;
 }
 
 /**
  * 执行器端口（M6 RuntimeAdapter 的适配目标）：
  * 抛异常 ≡ 失败（调度器 settle 包装捕获，FR-008 不击穿循环）；
  * 无 timeout / cancel——属 M6 RuntimeAdapter 契约。
+ *
+ * M9：可选 feedback（修复轮次上下文——上轮审阅意见 / 验证失败
+ * 摘要）；既有实现忽略之，向后兼容。
  */
 export interface TaskExecutor {
-  execute(task: Task): Promise<TaskExecutionResult>;
+  execute(task: Task, feedback?: string): Promise<TaskExecutionResult>;
 }

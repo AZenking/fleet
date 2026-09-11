@@ -145,6 +145,7 @@ describe('SC-002 三段式：双 reason 并行物理隔离（验收锚点）', (
       file,
       '--runtime',
       'write-cli.sh',
+      '--no-validation-gate',
       '--json',
     ]);
     clearInterval(sampler);
@@ -241,6 +242,7 @@ describe('基线继承（依赖链）', () => {
       file,
       '--runtime',
       'write-cli.sh',
+      '--no-validation-gate',
       '--json',
     ]);
     expect(result.exitCode).toBe(0);

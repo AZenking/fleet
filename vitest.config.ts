@@ -48,6 +48,13 @@ export default defineConfig({
       },
       {
         test: {
+          name: 'validation',
+          include: ['packages/validation/src/**/*.test.ts'],
+          testTimeout: 30_000,
+        },
+      },
+      {
+        test: {
           name: 'cli-e2e',
           include: ['tests/cli/**/*.test.ts'],
           testTimeout: 120_000,

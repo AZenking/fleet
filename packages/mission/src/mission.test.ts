@@ -291,3 +291,67 @@ describe('Artifact / Run schema（T013 契约基线）', () => {
     ).toBe(false);
   });
 });
+
+describe('M9 验收策略字段（validation / maxReviewLoops）', () => {
+  it('合法显式配置解析为强类型实体', () => {
+    const mission = loadOrThrow(`
+id: v9
+goal: 验证门
+planningMode: execution
+requirements:
+  - text: 需求
+plan:
+  summary: 方案
+tasks:
+  - id: impl
+    goal: 实现
+    agentRole: reason
+validation:
+  commands:
+    lint: ./checks/lint.sh
+    tests: ./checks/tests.sh
+  timeoutMs: 60000
+maxReviewLoops: 2
+acceptance:
+  - given: 无
+    when: 执行
+    then: 完成
+`);
+    expect(mission.validation).toEqual({
+      commands: { lint: './checks/lint.sh', tests: './checks/tests.sh' },
+      timeoutMs: 60000,
+    });
+    expect(mission.maxReviewLoops).toBe(2);
+  });
+
+  it('maxReviewLoops = 0 合法（纯验证门）；既有 mission 无新字段照常解析', () => {
+    const gated = loadOrThrow(
+      VALID.replace('acceptance:', 'maxReviewLoops: 0\nacceptance:'),
+    );
+    expect(gated.maxReviewLoops).toBe(0);
+    expect(gated.validation).toBeUndefined();
+    expect(loadOrThrow(VALID).maxReviewLoops).toBeUndefined();
+  });
+
+  it('非法值拒绝：负数轮次 / 非正超时 / 未知命令键', () => {
+    expect(
+      issuesOf(VALID.replace('acceptance:', 'maxReviewLoops: -1\nacceptance:')),
+    ).toHaveLength(1);
+    expect(
+      issuesOf(
+        VALID.replace(
+          'acceptance:',
+          'validation:\n  timeoutMs: 0\nacceptance:',
+        ),
+      ),
+    ).toHaveLength(1);
+    expect(
+      issuesOf(
+        VALID.replace(
+          'acceptance:',
+          'validation:\n  commands:\n    format: prettier .\nacceptance:',
+        ),
+      ),
+    ).toHaveLength(1);
+  });
+});

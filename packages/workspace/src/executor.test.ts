@@ -280,3 +280,144 @@ describe('WorkspaceResolvingExecutor（SC-005 / 处置 / 并行 / 基线）', ()
     expect(git('status --porcelain').trim()).toBe(''); // 主仓干净
   });
 });
+
+describe('M9 gate 接缝（T004）', () => {
+  it('gate 通过 → merged；拒绝 → destroyed + 任务失败 + retryable 透传', async () => {
+    const manager = new GitWorktreeManager(repo, { git: { env: GIT_ENV } });
+    const decisions = [true, false];
+    const gate: import('./types.js').WorkspaceGate = {
+      packages: [{ taskId: 'g1' }, { taskId: 'g2' }],
+      evaluate: async (evaluation) => {
+        // 修复轮次入口透传（reexecute 可用性）
+        expect(evaluation.reexecute).toBeTypeOf('function');
+        expect(evaluation.workspace.path).toContain('.fleet');
+        const pass = decisions.shift()!;
+        return pass
+          ? { pass: true, outcome: 'approved' }
+          : {
+              pass: false,
+              outcome: 'review_exceeded',
+              detail: '审阅轮次耗尽',
+              retryable: false,
+            };
+      },
+    };
+    const wrapperRef: { current?: WorkspaceResolvingExecutor } = {};
+    const wrapper = new WorkspaceResolvingExecutor({
+      inner: {
+        execute: async (t) => {
+          writeFileSync(
+            path.join(wrapperRef.current!.cwdResolver(t), `${t.id}.txt`),
+            'gate-seam\n',
+          );
+          return { ok: true };
+        },
+      },
+      manager,
+      repoRoot: repo,
+      runId: 'run_gate1',
+      gate,
+    });
+    wrapperRef.current = wrapper;
+
+    const passResult = await wrapper.execute(task('g1', 'reason'));
+    expect(passResult.ok).toBe(true);
+    expect(git('log --oneline --grep=g1 -1')).toContain('fleet: merge g1');
+
+    const failResult = await wrapper.execute(task('g2', 'reason'));
+    expect(failResult.ok).toBe(false);
+    expect(failResult.detail).toBe('审阅轮次耗尽');
+    expect(failResult.retryable).toBe(false);
+    expect(git('log --oneline --grep=g2')).toBe(''); // 零合并
+
+    const dispositions = wrapper.dispositions;
+    expect(dispositions.find((d) => d.taskId === 'g1')!.action).toBe('merged');
+    expect(dispositions.find((d) => d.taskId === 'g1')!.outcome).toBe(
+      'approved',
+    );
+    const g2 = dispositions.find((d) => d.taskId === 'g2')!;
+    expect(g2.action).toBe('destroyed');
+    expect(g2.outcome).toBe('review_exceeded');
+    expect(wrapper.reviews).toEqual(gate.packages); // 报告面代理
+  });
+
+  it('reexecute 闭包转发 inner（反馈透传）+ gate 异常 fail-closed', async () => {
+    const manager = new GitWorktreeManager(repo, { git: { env: GIT_ENV } });
+    const feedbacks: string[] = [];
+    const inner: TaskExecutor = {
+      execute: async (_t, feedback) => {
+        if (feedback !== undefined) {
+          feedbacks.push(feedback);
+          return { ok: true };
+        }
+        return { ok: true };
+      },
+    };
+    const gate: import('./types.js').WorkspaceGate = {
+      packages: [],
+      evaluate: async (evaluation) => {
+        const fix = await evaluation.reexecute('请补充测试覆盖');
+        return fix.ok
+          ? { pass: true, outcome: 'approved' }
+          : { pass: false, outcome: 'fix_failed' };
+      },
+    };
+    const wrapper = new WorkspaceResolvingExecutor({
+      inner,
+      manager,
+      repoRoot: repo,
+      runId: 'run_gate2',
+      gate,
+    });
+    const result = await wrapper.execute(task('g3', 'reason'));
+    expect(result.ok).toBe(true);
+    expect(feedsBack()).toBe(true);
+    function feedsBack(): boolean {
+      return feedbacks.includes('请补充测试覆盖');
+    }
+
+    // gate 抛异常 → fail-closed：任务失败 + destroyed，不击穿
+    const boomGate: import('./types.js').WorkspaceGate = {
+      packages: [],
+      evaluate: async () => {
+        throw new Error('审阅器崩溃');
+      },
+    };
+    const wrapper2 = new WorkspaceResolvingExecutor({
+      inner: { execute: async () => ({ ok: true }) },
+      manager,
+      repoRoot: repo,
+      runId: 'run_gate3',
+      gate: boomGate,
+    });
+    const boomed = await wrapper2.execute(task('g4', 'reason'));
+    expect(boomed.ok).toBe(false);
+    expect(boomed.retryable).toBe(false);
+    expect(boomed.detail).toContain('fail-closed');
+  });
+
+  it('无 gate 回归：成功直接 merge（M8 行为逐字节不变）', async () => {
+    const manager = new GitWorktreeManager(repo, { git: { env: GIT_ENV } });
+    const wrapperRef: { current?: WorkspaceResolvingExecutor } = {};
+    const wrapper = new WorkspaceResolvingExecutor({
+      inner: {
+        execute: async (t) => {
+          writeFileSync(
+            path.join(wrapperRef.current!.cwdResolver(t), `${t.id}.txt`),
+            'm8-regress\n',
+          );
+          return { ok: true };
+        },
+      },
+      manager,
+      repoRoot: repo,
+      runId: 'run_gate4',
+    });
+    wrapperRef.current = wrapper;
+    const result = await wrapper.execute(task('g5', 'reason'));
+    expect(result.ok).toBe(true);
+    expect(result.retryable).toBeUndefined();
+    expect(wrapper.reviews).toBeUndefined();
+    expect(git('log --oneline --grep=g5 -1')).toContain('fleet: merge g5');
+  });
+});
