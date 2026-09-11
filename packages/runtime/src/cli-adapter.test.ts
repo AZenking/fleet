@@ -7,6 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { CliRuntimeAdapter } from './cli-adapter.js';
 import type { RuntimeRequest } from './types.js';
+import { parseUsageMarker } from './types.js';
 
 /**
  * US2：CliRuntimeAdapter 替身矩阵（tasks.md T011 / SC-003 / SC-006）。
@@ -211,5 +212,46 @@ describe('启动失败（M6 条款 1：异常不逃逸）', () => {
     expect(result.ok).toBe(false);
     expect(result.code).toBe('error');
     expect(result.detail).toContain('启动失败');
+  });
+});
+
+describe('M10 FLEET_USAGE 标记行协议', () => {
+  it('替身输出含标记行 → usage 采纳', async () => {
+    const adapter = new CliRuntimeAdapter({
+      name: 'usage-cli',
+      command: './usage-cli.sh',
+      buildArgs: (req) => [req.prompt],
+      env: {},
+    });
+    const result = await adapter.execute(request());
+    expect(result.ok).toBe(true);
+    expect(result.usage).toEqual({
+      inputTokens: 10,
+      outputTokens: 2,
+      cachedTokens: 1,
+    });
+  });
+
+  it('普通输出无标记 → unmeasured（usage 缺省）', async () => {
+    const adapter = standIn('ok');
+    const result = await adapter.execute(request());
+    expect(result.ok).toBe(true);
+    expect(result.usage).toBeUndefined();
+  });
+
+  it('parseUsageMarker 纯函数矩阵：合法 / 缺字段 / 负值 / 坏 JSON', () => {
+    expect(
+      parseUsageMarker(
+        'FLEET_USAGE {"inputTokens":1,"outputTokens":2,"cachedTokens":3}',
+      ),
+    ).toEqual({ inputTokens: 1, outputTokens: 2, cachedTokens: 3 });
+    expect(parseUsageMarker('FLEET_USAGE {"inputTokens":1}')).toBeUndefined();
+    expect(
+      parseUsageMarker(
+        'FLEET_USAGE {"inputTokens":-1,"outputTokens":2,"cachedTokens":0}',
+      ),
+    ).toBeUndefined();
+    expect(parseUsageMarker('FLEET_USAGE {broken')).toBeUndefined();
+    expect(parseUsageMarker('普通输出')).toBeUndefined();
   });
 });

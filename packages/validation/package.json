@@ -23,6 +23,7 @@
   },
   "dependencies": {
     "@fleet/agents": "workspace:*",
+    "@fleet/context": "workspace:*",
     "@fleet/core": "workspace:*",
     "@fleet/mission": "workspace:*",
     "@fleet/runtime": "workspace:*",

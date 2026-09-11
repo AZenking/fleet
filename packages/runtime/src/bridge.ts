@@ -40,7 +40,7 @@ export class MissionRuntimeBridge implements TaskExecutor {
   constructor(
     private readonly runtime: RuntimeAdapter,
     private readonly config: BridgeConfig,
-    private readonly budget: MissionBudget = {},
+    private readonly budgetConfig: MissionBudget = {},
   ) {}
 
   async execute(
@@ -87,7 +87,7 @@ export class MissionRuntimeBridge implements TaskExecutor {
       return taskLevel.value;
     }
     return (
-      this.budget.missionMaxDurationMs ??
+      this.budgetConfig.missionMaxDurationMs ??
       this.config.defaultTimeoutMs ??
       DEFAULT_TASK_TIMEOUT_MS
     );

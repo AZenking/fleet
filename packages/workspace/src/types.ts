@@ -91,8 +91,8 @@ export type WorkspaceDisposition = {
 export interface GateEvaluation {
   task: Task;
   workspace: Workspace;
-  /** 首跑实现结果（ok=false → gate 应直接 fix_failed，M5 语义） */
-  execution: { ok: boolean; detail?: string };
+  /** 首跑实现结果（ok=false → gate 应直接 fix_failed，M5 语义；retryable 透传——M10 装配期拒绝等终态） */
+  execution: { ok: boolean; detail?: string; retryable?: boolean };
   /** 修复轮次入口：inner 二次执行（反馈 = 验证失败摘要 / 审阅意见） */
   reexecute: (feedback: string) => Promise<{ ok: boolean; detail?: string }>;
 }

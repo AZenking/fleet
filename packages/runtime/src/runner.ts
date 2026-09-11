@@ -62,6 +62,8 @@ interface ExecutorReportFace {
   }>;
   /** M9 验证门报告面（ReviewPackage 数组，结构由 @fleet/validation 定义） */
   reviews?: unknown[];
+  /** M10 预算聚合面（BudgetLedger.snapshot，结构由 @fleet/budget 定义） */
+  budget?: unknown;
 }
 
 export interface RunReport {
@@ -82,6 +84,8 @@ export interface RunReport {
   }>;
   /** M9：ReviewPackage 数组（每 gated 任务一份——结构见 @fleet/validation） */
   reviews?: unknown[];
+  /** M10：三级聚合 + 优化收益（结构见 @fleet/budget） */
+  budget?: unknown;
   note?: string;
 }
 
@@ -196,6 +200,7 @@ export async function runMissionFile(
     ...(reportFace.reviews !== undefined
       ? { reviews: reportFace.reviews }
       : {}),
+    ...(reportFace.budget !== undefined ? { budget: reportFace.budget } : {}),
   };
   const failedCount = outcome.nodes.filter(
     (node) => node.status === 'failed',

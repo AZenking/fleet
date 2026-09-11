@@ -294,3 +294,36 @@ describe('M9 RunReport.reviews（duck-typing 合成）', () => {
     }
   });
 });
+
+describe('M10 RunReport.budget（duck-typing 合成）', () => {
+  it('执行器带 budget 面 → 透传；缺省不影响既有报告', async () => {
+    const yaml = missionYaml({ tasks: taskYaml('a') });
+    const fs = fsWith(yaml);
+    const budgetFace = { mission: { sums: { executions: 1 } } };
+    const withBudget = await runMissionFile('/repo/missions/demo.yaml', {
+      fs,
+      cwd: '/repo',
+      makeExecutor: () =>
+        ({
+          budget: budgetFace,
+          taskTimings: new Map(),
+          perTaskTimeoutMs: new Map(),
+          async execute() {
+            return { ok: true };
+          },
+        }) as import('@fleet/scheduler').TaskExecutor & { budget: unknown },
+    });
+    expect(withBudget.kind).toBe('completed');
+    if (withBudget.kind === 'completed') {
+      expect(withBudget.report.budget).toEqual(budgetFace);
+    }
+    const without = await runMissionFile('/repo/missions/demo.yaml', {
+      fs,
+      cwd: '/repo',
+    });
+    expect(without.kind).toBe('completed');
+    if (without.kind === 'completed') {
+      expect(without.report.budget).toBeUndefined();
+    }
+  });
+});

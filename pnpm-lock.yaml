@@ -44,6 +44,12 @@ importers:
       '@fleet/agents':
         specifier: workspace:*
         version: link:../../packages/agents
+      '@fleet/budget':
+        specifier: workspace:*
+        version: link:../../packages/budget
+      '@fleet/context':
+        specifier: workspace:*
+        version: link:../../packages/context
       '@fleet/core':
         specifier: workspace:*
         version: link:../../packages/core
@@ -81,6 +87,12 @@ importers:
 
   packages/agents:
     dependencies:
+      '@fleet/budget':
+        specifier: workspace:*
+        version: link:../budget
+      '@fleet/context':
+        specifier: workspace:*
+        version: link:../context
       '@fleet/core':
         specifier: workspace:*
         version: link:../core
@@ -93,6 +105,47 @@ importers:
       '@fleet/scheduler':
         specifier: workspace:*
         version: link:../scheduler
+    devDependencies:
+      '@types/node':
+        specifier: ^26.5.0
+        version: 26.5.0
+      tsup:
+        specifier: ^8.5.1
+        version: 8.5.1(postcss@8.5.28)(typescript@5.9.3)(yaml@2.9.0)
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
+  packages/budget:
+    dependencies:
+      '@fleet/core':
+        specifier: workspace:*
+        version: link:../core
+      '@fleet/mission':
+        specifier: workspace:*
+        version: link:../mission
+    devDependencies:
+      '@types/node':
+        specifier: ^26.5.0
+        version: 26.5.0
+      tsup:
+        specifier: ^8.5.1
+        version: 8.5.1(postcss@8.5.28)(typescript@5.9.3)(yaml@2.9.0)
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
+  packages/context:
+    dependencies:
+      '@fleet/budget':
+        specifier: workspace:*
+        version: link:../budget
+      '@fleet/core':
+        specifier: workspace:*
+        version: link:../core
+      '@fleet/mission':
+        specifier: workspace:*
+        version: link:../mission
     devDependencies:
       '@types/node':
         specifier: ^26.5.0
@@ -228,6 +281,9 @@ importers:
       '@fleet/agents':
         specifier: workspace:*
         version: link:../agents
+      '@fleet/context':
+        specifier: workspace:*
+        version: link:../context
       '@fleet/core':
         specifier: workspace:*
         version: link:../core

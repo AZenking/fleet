@@ -55,6 +55,18 @@ export default defineConfig({
       },
       {
         test: {
+          name: 'budget',
+          include: ['packages/budget/src/**/*.test.ts'],
+        },
+      },
+      {
+        test: {
+          name: 'context',
+          include: ['packages/context/src/**/*.test.ts'],
+        },
+      },
+      {
+        test: {
           name: 'cli-e2e',
           include: ['tests/cli/**/*.test.ts'],
           testTimeout: 120_000,

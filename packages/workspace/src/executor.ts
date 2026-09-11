@@ -52,6 +52,11 @@ export class WorkspaceResolvingExecutor implements TaskExecutor {
     return this.config.gate?.packages;
   }
 
+  /** M10：inner 的预算聚合面透传（RunReport.budget） */
+  get budget(): unknown {
+    return (this.config.inner as { budget?: unknown }).budget;
+  }
+
   /** cwd 查表面（供 AgentTaskExecutor 的 per-task resolver 绑定） */
   cwdResolver(task: Task): string {
     return this.workspaceCwd.get(task.id) ?? this.config.repoRoot;

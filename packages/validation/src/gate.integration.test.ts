@@ -8,6 +8,7 @@ import { FakeRuntimeAdapter } from '@fleet/runtime';
 import { AgentTaskExecutor } from '@fleet/agents';
 import { RuntimeRegistry } from '@fleet/agents';
 import { buildDag, Scheduler } from '@fleet/scheduler';
+import { loadMission } from '@fleet/mission';
 import {
   GitWorktreeManager,
   WorkspaceResolvingExecutor,
@@ -82,7 +83,7 @@ function assemble(
   const gate = new ValidationReviewGate({
     runner,
     reviewer: new AgentReviewer({ adapter: reviewFake, repoRoot: repo }),
-    missionGoal: '集成验证',
+    mission: integrationMission,
     runId: 'run_gateit01',
     profile,
   });
@@ -108,6 +109,27 @@ const REVIEW_REJECT = JSON.stringify({
   verdict: 'changes_requested',
   comments: '请补充',
 });
+
+const integrationMission = loadMission(
+  `
+id: gateit10
+goal: 集成验证目标
+planningMode: execution
+requirements:
+  - text: 需求
+plan:
+  summary: 方案
+tasks:
+  - id: placeholder
+    goal: 占位
+    agentRole: reason
+acceptance:
+  - given: 无
+    when: 执行
+    then: 完成
+`,
+  { sourcePath: '<test>' },
+);
 
 describe('ValidationReviewGate 真管理器集成', () => {
   it('approved → merged：主分支含写入文件；worktree 清理', async () => {

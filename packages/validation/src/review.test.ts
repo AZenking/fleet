@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { loadMission } from '@fleet/mission';
 import { FakeRuntimeAdapter } from '@fleet/runtime';
 
 import { AgentReviewer } from './review.js';
@@ -7,9 +8,30 @@ import type { ReviewRequest } from './types.js';
 
 /** T009：裁决解析两级宽容 / 非法拒绝 / 适配器失败 fail-closed / 请求契约 */
 
+const reviewMission = loadMission(
+  `
+id: rv10
+goal: 交付功能 X
+planningMode: execution
+requirements:
+  - text: 需求
+plan:
+  summary: 方案
+tasks:
+  - id: impl-a
+    goal: 实现 A
+    agentRole: reason
+acceptance:
+  - given: 无
+    when: 执行
+    then: 完成
+`,
+  { sourcePath: '<test>' },
+);
+
 function requestOf(): ReviewRequest {
   return {
-    missionGoal: '交付功能 X',
+    mission: reviewMission,
     taskId: 'impl-a',
     loop: 1,
     artifact: {
@@ -120,6 +142,8 @@ describe('AgentReviewer（裁决执行与解析）', () => {
     expect(request.env?.FLEET_PERMISSION).toBe('READ_ONLY');
     expect(request.prompt).toContain('changes_requested'); // 输出格式说明
     expect(request.prompt).toContain('上一轮意见'); // priorFeedback 透传
+    expect(request.prompt).toContain('## mission'); // M10 统一装配分节
+    expect(request.prompt).toContain('交付功能 X'); // mission 内容注入
     expect(request.prompt).toContain('AssertionError'); // 失败检查摘要
   });
 });

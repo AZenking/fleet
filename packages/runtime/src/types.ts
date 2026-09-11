@@ -30,6 +30,15 @@ export interface RuntimeResult {
   detail?: string;
   /** Fake 模拟输出（脚本提供） */
   output?: string;
+  /**
+   * M10：Token 用量报告（尽力而为——运行时能测才报；缺省
+   * unmeasured，调用方按 measured=false 记录，不伪造）
+   */
+  usage?: {
+    inputTokens: number;
+    outputTokens: number;
+    cachedTokens: number;
+  };
 }
 
 /** RuntimeAdapter 契约（宪法 IV：Role 与 Runtime 的唯一接缝） */
@@ -47,6 +56,60 @@ export interface FakeStep {
   /** 覆盖角色画像延迟 */
   delayMs?: number;
   output?: string;
+  /** M10：usage 注入（成功路径携带——CI 确定性测量替身） */
+  usage?: {
+    inputTokens: number;
+    outputTokens: number;
+    cachedTokens: number;
+  };
+}
+
+/**
+ * CLI usage 标记行协议（M10）：适配器输出含
+ * `FLEET_USAGE {"inputTokens":..,"outputTokens":..,"cachedTokens":..}`
+ * JSON 行才解析采纳；否则 unmeasured（尽力而为，不误解析任意输出）。
+ */
+export const FLEET_USAGE_MARKER = 'FLEET_USAGE';
+
+export interface RuntimeUsage {
+  inputTokens: number;
+  outputTokens: number;
+  cachedTokens: number;
+}
+
+/** 从 CLI 输出解析 usage（标记行协议；无标记 → undefined） */
+export function parseUsageMarker(output: string): RuntimeUsage | undefined {
+  for (const line of output.split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith(FLEET_USAGE_MARKER)) {
+      continue;
+    }
+    const json = trimmed.slice(FLEET_USAGE_MARKER.length).trim();
+    try {
+      const parsed: unknown = JSON.parse(json);
+      if (typeof parsed !== 'object' || parsed === null) {
+        continue;
+      }
+      const { inputTokens, outputTokens, cachedTokens } = parsed as Record<
+        string,
+        unknown
+      >;
+      const valid = [inputTokens, outputTokens, cachedTokens].every(
+        (value) =>
+          typeof value === 'number' && Number.isInteger(value) && value >= 0,
+      );
+      if (valid) {
+        return {
+          inputTokens: inputTokens as number,
+          outputTokens: outputTokens as number,
+          cachedTokens: cachedTokens as number,
+        };
+      }
+    } catch {
+      // 非法标记行按未测量处理
+    }
+  }
+  return undefined;
 }
 
 /** 五角色默认延迟画像（ms）：reflex 快 → wisdom 慢（research.md D3） */

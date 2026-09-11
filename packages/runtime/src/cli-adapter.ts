@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 
 import type { RuntimeAdapter, RuntimeRequest, RuntimeResult } from './types.js';
-import { assertPermissionEnv } from './types.js';
+import { assertPermissionEnv, parseUsageMarker } from './types.js';
 
 /**
  * CliRuntimeAdapter 基座（research.md D4）：
@@ -121,9 +121,12 @@ export class CliRuntimeAdapter implements RuntimeAdapter {
         }
         const truncated = stdout.length >= MAX_OUTPUT_BYTES;
         if (code === 0) {
+          // M10 标记行协议：输出含 FLEET_USAGE 行才采纳（否则 unmeasured）
+          const usage = parseUsageMarker(stdout);
           finish({
             ok: true,
             output: truncated ? `${stdout}\n[输出已截断至 64KB]` : stdout,
+            ...(usage !== undefined ? { usage } : {}),
           });
         } else {
           finish({

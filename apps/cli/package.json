@@ -21,6 +21,8 @@
   },
   "dependencies": {
     "@fleet/agents": "workspace:*",
+    "@fleet/budget": "workspace:*",
+    "@fleet/context": "workspace:*",
     "@fleet/core": "workspace:*",
     "@fleet/mission": "workspace:*",
     "@fleet/repository": "workspace:*",

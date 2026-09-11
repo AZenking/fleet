@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
 import type { AgentRole } from '@fleet/mission';
+import { loadMission } from '@fleet/mission';
+import { BudgetLedger } from '@fleet/budget';
+import { ContextBuilder, RunArtifactRegistry } from '@fleet/context';
 import { FakeRuntimeAdapter } from '@fleet/runtime';
 
 import { allAgentDefinitions } from './definitions.js';
@@ -173,5 +176,130 @@ describe('AgentTaskExecutor（请求构造，SC-005 载体）', () => {
     await executor.execute(t);
     expect(executor.requests).toHaveLength(2);
     expect(executor.requests[0]!.runId).not.toBe(executor.requests[1]!.runId);
+  });
+});
+
+describe('M10 AgentTaskExecutor 上下文接缝', () => {
+  const missionOf = loadMission(
+    `
+id: a10
+goal: 目标甲
+planningMode: execution
+requirements:
+  - text: 需求
+plan:
+  summary: 方案
+tasks:
+  - id: t-write
+    goal: 实现
+    agentRole: reason
+    dependsOn: []
+acceptance:
+  - given: 无
+    when: 执行
+    then: 完成
+`,
+    { sourcePath: '<test>' },
+  );
+
+  function executorWith(fake: import('@fleet/runtime').FakeRuntimeAdapter) {
+    const context = {
+      builder: new ContextBuilder(),
+      registry: new RunArtifactRegistry(),
+      ledger: new BudgetLedger(),
+      mission: missionOf,
+    };
+    const executor = new AgentTaskExecutor({
+      registry: new RuntimeRegistry(fake),
+      cwd: '/repo',
+      context,
+    });
+    return { executor, context };
+  }
+
+  it('注入路径：prompt = 角色头 + ContextBuilder 渲染（## 分节 + [任务] 标记）', async () => {
+    const fake = new FakeRuntimeAdapter({ zeroDelays: true });
+    const { executor } = executorWith(fake);
+    const result = await executor.execute(missionOf.tasks![0]!);
+    expect(result.ok).toBe(true);
+    const prompt = fake.requests[0]!.prompt;
+    expect(prompt).toContain('[reason · DEEP_WRITE]');
+    expect(prompt.startsWith('[任务 t-write]')).toBe(false); // 角色头在前
+    expect(prompt).toContain('[任务 t-write] 实现');
+    expect(prompt).toContain('## mission');
+    expect(prompt).toContain('目标：目标甲');
+  });
+
+  it('usage 回收：注入 → ledger 三级面；未注入 → measured=false', async () => {
+    const measured = new FakeRuntimeAdapter({
+      zeroDelays: true,
+      script: {
+        't-write': [
+          {
+            outcome: 'success',
+            usage: { inputTokens: 90, outputTokens: 10, cachedTokens: 5 },
+          },
+        ],
+      },
+    });
+    const { executor, context } = executorWith(measured);
+    await executor.execute(missionOf.tasks![0]!);
+    const record = context.ledger.snapshot().tasks[0]!.executions[0]!;
+    expect(record).toMatchObject({
+      taskId: 't-write',
+      inputTokens: 90,
+      measured: true,
+    });
+    expect(record.contextSize).toBeGreaterThan(0); // 装配尺寸入口径
+    expect(record.estimatedCost).toBe(0); // 单价缺省 0
+
+    const bare = executorWith(new FakeRuntimeAdapter({ zeroDelays: true }));
+    await bare.executor.execute(missionOf.tasks![0]!);
+    const unmeasured = bare.context.ledger.snapshot().tasks[0]!.executions[0]!;
+    expect(unmeasured.measured).toBe(false);
+    expect(unmeasured.inputTokens).toBe(0);
+  });
+
+  it('超预算 → Reject/Escalate 终态（retryable=false + 明细）', async () => {
+    const fake = new FakeRuntimeAdapter({ zeroDelays: true });
+    const { executor } = executorWith(fake);
+    const tiny = {
+      ...missionOf.tasks![0]!,
+      constraints: [{ kind: 'maxTokens' as const, value: 1 }],
+    };
+    const result = await executor.execute(tiny);
+    expect(result.ok).toBe(false);
+    expect(result.retryable).toBe(false);
+    expect(result.detail).toContain('context 超预算');
+    expect(fake.requests).toHaveLength(0); // 未派发——装配期拒绝
+  });
+
+  it('budget getter：聚合面可读；registry 记录产物（下游注入面）', async () => {
+    const fake = new FakeRuntimeAdapter({
+      zeroDelays: true,
+      script: { 't-write': [{ outcome: 'success', output: '实现完成产物' }] },
+    });
+    const { executor, context } = executorWith(fake);
+    await executor.execute(missionOf.tasks![0]!);
+    expect(context.registry.outputsOf('t-write')?.output).toContain(
+      '实现完成产物',
+    );
+    const budget = executor.budget as {
+      mission: { sums: { executions: number } };
+    };
+    expect(budget.mission.sums.executions).toBe(1);
+  });
+
+  it('缺省路径回归：无 context 三件套 = M7 手写模板', async () => {
+    const fake = new FakeRuntimeAdapter({ zeroDelays: true });
+    const executor = new AgentTaskExecutor({
+      registry: new RuntimeRegistry(fake),
+      cwd: '/repo',
+    });
+    await executor.execute(missionOf.tasks![0]!);
+    const prompt = fake.requests[0]!.prompt;
+    expect(prompt).toContain('[任务 t-write] 实现');
+    expect(prompt).not.toContain('## mission');
+    expect(executor.budget).toBeUndefined();
   });
 });

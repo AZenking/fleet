@@ -1,9 +1,9 @@
 {
-  "name": "@fleet/agents",
+  "name": "@fleet/budget",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Fleet 认知角色层：五角色定义 + 权限矩阵（Tool Policy）+ 运行时注册表 + 角色解析执行器",
+  "description": "Fleet 预算层：Token 估算口径 + UsageRecord 三级聚合",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -19,15 +19,11 @@
   ],
   "scripts": {
     "build": "tsup",
-    "test": "vitest run --project agents"
+    "test": "vitest run --project budget"
   },
   "dependencies": {
-    "@fleet/budget": "workspace:*",
-    "@fleet/context": "workspace:*",
     "@fleet/core": "workspace:*",
-    "@fleet/mission": "workspace:*",
-    "@fleet/runtime": "workspace:*",
-    "@fleet/scheduler": "workspace:*"
+    "@fleet/mission": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^26.5.0",

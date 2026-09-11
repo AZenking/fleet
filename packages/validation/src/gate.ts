@@ -1,3 +1,4 @@
+import type { Mission } from '@fleet/mission';
 import type {
   GateDecision,
   GateEvaluation,
@@ -30,8 +31,8 @@ export interface ValidationGateConfig {
   runner: Validator;
   reviewer: Reviewer;
   profile: ValidationProfile;
-  /** mission 摘要（审阅 prompt 上下文） */
-  missionGoal: string;
+  /** mission（审阅上下文装配来源，M10 统一） */
+  mission: Mission;
   runId?: string;
   /** 事件出口（缺省丢弃——库层可测顺序与计数） */
   emitEvent?: (event: ValidationEvent) => void;
@@ -44,11 +45,15 @@ export class ValidationReviewGate implements WorkspaceGate {
 
   async evaluate(evaluation: GateEvaluation): Promise<GateDecision> {
     if (!evaluation.execution.ok) {
-      // 首跑实现失败：M5 retry 语义（可重试），不经循环
+      // 首跑实现失败：M5 retry 语义（可重试），不经循环；
+      // 装配期终态拒绝（context 超预算等）透传 retryable=false
       return {
         pass: false,
         outcome: 'fix_failed',
         detail: evaluation.execution.detail ?? '实现执行失败',
+        ...(evaluation.execution.retryable !== undefined
+          ? { retryable: evaluation.execution.retryable }
+          : {}),
       };
     }
 
@@ -103,7 +108,7 @@ export class ValidationReviewGate implements WorkspaceGate {
         });
         const review = await this.config.reviewer.review(
           reviewRequest(
-            this.config.missionGoal,
+            this.config.mission,
             task.id,
             loop,
             artifact,
@@ -241,7 +246,7 @@ export class ValidationReviewGate implements WorkspaceGate {
 }
 
 function reviewRequest(
-  missionGoal: string,
+  mission: Mission,
   taskId: string,
   loop: number,
   artifact: ValidationArtifact,
@@ -250,7 +255,7 @@ function reviewRequest(
   // diff 检查的 outputExcerpt 即变更面摘录（runner 已截断头尾）
   const diffExcerpt =
     artifact.checks.find((check) => check.kind === 'diff')?.outputExcerpt ?? '';
-  return { missionGoal, taskId, loop, artifact, diffExcerpt, priorFeedback };
+  return { mission, taskId, loop, artifact, diffExcerpt, priorFeedback };
 }
 
 function failureSummary(artifact: ValidationArtifact): string {

@@ -223,3 +223,33 @@ describe('cleanup（FR-006 / SC-005）', () => {
     expect(adapter.settleLog).toHaveLength(4);
   });
 });
+
+describe('M10 usage 通道', () => {
+  it('Fake 脚本化 usage 注入（成功路径确定性携带）', async () => {
+    const fake = new FakeRuntimeAdapter({
+      zeroDelays: true,
+      script: {
+        'u-task': [
+          {
+            outcome: 'success',
+            usage: { inputTokens: 120, outputTokens: 30, cachedTokens: 8 },
+          },
+        ],
+      },
+    });
+    const result = await fake.execute(request({ agentId: 'agent:u-task' }));
+    expect(result.ok).toBe(true);
+    expect(result.usage).toEqual({
+      inputTokens: 120,
+      outputTokens: 30,
+      cachedTokens: 8,
+    });
+  });
+
+  it('未注入 usage → result.usage 缺省（unmeasured 语义）', async () => {
+    const fake = new FakeRuntimeAdapter({ zeroDelays: true });
+    const result = await fake.execute(request({ agentId: 'agent:plain-task' }));
+    expect(result.ok).toBe(true);
+    expect(result.usage).toBeUndefined();
+  });
+});

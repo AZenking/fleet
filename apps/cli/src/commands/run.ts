@@ -32,6 +32,8 @@ import {
   ValidationRunner,
   resolveValidationProfile,
 } from '@fleet/validation';
+import { BudgetLedger } from '@fleet/budget';
+import { ContextBuilder, RunArtifactRegistry } from '@fleet/context';
 import type { TaskExecutor } from '@fleet/scheduler';
 import type { ValidationEvent } from '@fleet/validation';
 import { permissionOf } from '@fleet/runtime';
@@ -265,6 +267,17 @@ function renderReport(kind: 'completed' | 'failed', report: RunReport): string {
       );
     }
   }
+  if (report.budget !== undefined) {
+    const budget = report.budget as {
+      mission: {
+        sums: { inputTokens: number; outputTokens: number; executions: number };
+        optimization: { savedRatio: number };
+      };
+    };
+    lines.push(
+      `  预算：${budget.mission.sums.inputTokens} in / ${budget.mission.sums.outputTokens} out tokens · ${budget.mission.sums.executions} 次执行 · 上下文节省 ${Math.round(budget.mission.optimization.savedRatio * 100)}%`,
+    );
+  }
   if (report.workspaces !== undefined) {
     lines.push('  工作区：');
     for (const ws of report.workspaces) {
@@ -292,17 +305,28 @@ function buildExecutor(
   },
 ): TaskExecutor {
   const registry = RuntimeRegistry.fromSpec(specs);
+  const missionMaxDurationMs = mission.constraints.find(
+    (constraint) => constraint.kind === 'maxDurationMs',
+  )?.value;
   if (!options.useWorktree) {
     return new AgentTaskExecutor({
       registry,
       cwd: process.cwd(),
-      missionMaxDurationMs: mission.constraints.find(
-        (constraint) => constraint.kind === 'maxDurationMs',
-      )?.value,
+      missionMaxDurationMs,
+      context: {
+        builder: new ContextBuilder(),
+        registry: new RunArtifactRegistry(),
+        ledger: new BudgetLedger(),
+        mission,
+      },
     });
   }
   const manager = new GitWorktreeManager(process.cwd());
   const wrapperRef: { current?: WorkspaceResolvingExecutor } = {};
+  // M10：上下文装配 + 产物回收 + 预算聚合（builder/registry/ledger 三件套）
+  const contextBuilder = new ContextBuilder();
+  const artifactRegistry = new RunArtifactRegistry();
+  const ledger = new BudgetLedger();
   const wrapper = new WorkspaceResolvingExecutor({
     inner: new AgentTaskExecutor({
       registry,
@@ -310,6 +334,12 @@ function buildExecutor(
       missionMaxDurationMs: mission.constraints.find(
         (constraint) => constraint.kind === 'maxDurationMs',
       )?.value,
+      context: {
+        builder: contextBuilder,
+        registry: artifactRegistry,
+        ledger,
+        mission,
+      },
     }),
     manager,
     repoRoot: process.cwd(),
@@ -324,9 +354,11 @@ function buildExecutor(
             reviewer: new AgentReviewer({
               adapter: registry.resolve('wisdom'),
               repoRoot: process.cwd(),
+              builder: contextBuilder,
+              registry: artifactRegistry,
             }),
             profile: resolveValidationProfile(mission, process.cwd()),
-            missionGoal: mission.goal,
+            mission,
             runId: `run_ws_${mission.id}`,
             emitEvent: options.emitGateEvent,
           }),

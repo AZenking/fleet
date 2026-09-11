@@ -126,6 +126,7 @@ export class FakeRuntimeAdapter implements RuntimeAdapter {
               finish({
                 ok: true,
                 ...(step.output !== undefined ? { output: step.output } : {}),
+                ...(step.usage !== undefined ? { usage: step.usage } : {}),
               });
             } else if (step.outcome === 'failure') {
               finish({ ok: false, code: 'error', detail: '模拟任务失败' });

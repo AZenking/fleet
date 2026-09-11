@@ -173,6 +173,11 @@ packages/workspace/     Fleet 物理工作区层：Git Worktree 隔离
 packages/validation/    Fleet 独立验收层：Validation Runner
                         （diff/lint/typecheck/tests）+ Wisdom 审阅
                         循环（maxReviewLoops 上限强制）+ 验证门
+packages/context/       Fleet 上下文装配层：五角色 Context Builder
+                        （声明式规则 + DAG 上游注入）+ 规则压缩
+                        阶梯 + 确定性渲染
+packages/budget/        Fleet 预算层：Token 估算口径 + UsageRecord
+                        三级聚合（Agent/Task/Mission）+ 优化收益
 configs/                fleet.yaml（仓库级 Fleet 配置）
 missions/               mission 文件（demo.yaml 为活样例）
 tests/cli/              CLI 进程级 e2e
@@ -194,6 +199,7 @@ specs/                  Spec Kit 规格与设计文档
 - M7 规格：[specs/008-m7-agents-real-runtime/spec.md](specs/008-m7-agents-real-runtime/spec.md)
 - M8 规格：[specs/009-m8-workspace-worktree/spec.md](specs/009-m8-workspace-worktree/spec.md)
 - M9 规格：[specs/010-m9-validation-review-loop/spec.md](specs/010-m9-validation-review-loop/spec.md)
+- M10 规格：[specs/011-m10-context-budget/spec.md](specs/011-m10-context-budget/spec.md)
 - 项目宪法：`.specify/memory/constitution.md`
 
 ## 质量门

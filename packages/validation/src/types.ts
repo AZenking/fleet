@@ -6,6 +6,7 @@
  * 唯一证据源；Review Loop 有固定上限（结构性不可能无限循环）。
  */
 
+import type { Mission } from '@fleet/mission';
 import type { Workspace } from '@fleet/workspace';
 
 export const CHECK_KINDS = ['diff', 'lint', 'typecheck', 'tests'] as const;
@@ -81,7 +82,7 @@ export interface ReviewVerdict {
 }
 
 export interface ReviewRequest {
-  missionGoal: string;
+  mission: Mission;
   taskId: string;
   loop: number;
   artifact: ValidationArtifact;

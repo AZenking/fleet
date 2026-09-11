@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { Task } from '@fleet/mission';
+import { loadMission, type Task } from '@fleet/mission';
 import type { GateEvaluation } from '@fleet/workspace';
 
 import { ValidationReviewGate } from './gate.js';
@@ -16,6 +16,27 @@ import type {
  * T010 循环编排（SC-003）：三路径 / 上限不变式（无第 3 轮修复）/
  * fail-closed / 事件序 / packages 全轮次。Fake runner + reviewer 注入。
  */
+
+const mission = loadMission(
+  `
+id: g10
+goal: 循环测试目标
+planningMode: execution
+requirements:
+  - text: 需求
+plan:
+  summary: 方案
+tasks:
+  - id: impl-a
+    goal: 实现 A
+    agentRole: reason
+acceptance:
+  - given: 无
+    when: 执行
+    then: 完成
+`,
+  { sourcePath: '<test>' },
+);
 
 const task: Task = {
   id: 'impl-a',
@@ -140,7 +161,7 @@ function gateOf(
   const gate = new ValidationReviewGate({
     runner,
     reviewer,
-    missionGoal: '目标',
+    mission,
     runId: 'run_test',
     profile: {
       checks: {
