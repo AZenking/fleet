@@ -1,0 +1,141 @@
+import { performance } from 'node:perf_hooks';
+
+import { TaskDagImpl } from './dag.js';
+import {
+  DEFAULT_SCHEDULER_CONFIG,
+  resolveSchedulerConfig,
+  type SchedulerConfig,
+} from './config.js';
+import type {
+  DagNode,
+  PropagationChain,
+  RunOutcome,
+  TaskExecutor,
+} from './types.js';
+
+/**
+ * 确定性 Rule-based 调度循环（research.md D4，宪法 V）：
+ * 决策串行、执行并发（批次屏障——每批 Promise.all 收齐再决策，
+ * 派发序列与状态转换完全确定，SC-006 结构性成立）。
+ * 无 LLM、无动态重排；固定 retry；失败传播到不动点。
+ */
+export class Scheduler {
+  private readonly config: SchedulerConfig;
+
+  constructor(config?: Partial<SchedulerConfig>) {
+    this.config =
+      config === undefined
+        ? DEFAULT_SCHEDULER_CONFIG
+        : resolveSchedulerConfig(config);
+  }
+
+  async run(dag: TaskDagImpl, executor: TaskExecutor): Promise<RunOutcome> {
+    const start = performance.now();
+    const dispatchOrder: string[] = [];
+
+    for (;;) {
+      // 1. 失败传播（failed → 传递依赖 pending → skipped，不动点）
+      this.propagateFailures(dag);
+      // 2. 就绪选择（声明序，截断到并发额度）
+      const ready = dag.readyTasks().slice(0, this.config.maxConcurrency);
+      if (ready.length === 0) {
+        break;
+      }
+      // 3. 派发（并行执行）+ 批次屏障收结果
+      for (const node of ready) {
+        node.status = 'running';
+        node.attempts += 1;
+        dispatchOrder.push(node.taskId);
+      }
+      await Promise.all(ready.map((node) => this.settle(node, executor)));
+    }
+
+    const counts = dag.counts();
+    return {
+      status: counts.failed > 0 ? 'failed' : 'completed',
+      nodes: dag.snapshot(),
+      dispatchOrder,
+      propagation: computePropagation(dag),
+      durationMs: Math.round(performance.now() - start),
+    };
+  }
+
+  /** settle：成功 → completed；失败且可重试 → pending（下批重试）；否则 failed。异常 ≡ 失败（不击穿）。 */
+  private async settle(node: DagNode, executor: TaskExecutor): Promise<void> {
+    try {
+      const result = await executor.execute(node.task);
+      if (result.ok) {
+        node.status = 'completed';
+        return;
+      }
+      this.recordFailure(node, result.detail ?? '执行失败');
+    } catch (error) {
+      this.recordFailure(
+        node,
+        error instanceof Error ? error.message : String(error),
+      );
+    }
+  }
+
+  private recordFailure(node: DagNode, detail: string): void {
+    if (node.attempts <= this.config.retry) {
+      node.status = 'pending'; // 重新入队，下一批重试
+    } else {
+      node.status = 'failed';
+      node.failureReason = detail;
+    }
+  }
+
+  /** failed → 沿 dependents BFS：pending → skipped（skippedBy = 首个 failed 祖先） */
+  private propagateFailures(dag: TaskDagImpl): void {
+    for (const failed of dag.allNodes()) {
+      if (failed.status !== 'failed') {
+        continue;
+      }
+      const queue = [...dag.dependentsOf(failed.taskId)];
+      while (queue.length > 0) {
+        const current = queue.shift()!;
+        const node = dag.node(current);
+        if (node === undefined) {
+          continue;
+        }
+        if (node.status === 'pending') {
+          node.status = 'skipped';
+          node.skippedBy = failed.taskId;
+        }
+        // completed/running 不改写（FR-007）；skipped/failed 不重复处理
+        if (node.status !== 'completed' && node.status !== 'running') {
+          queue.push(...dag.dependentsOf(current));
+        }
+      }
+    }
+  }
+}
+
+/** 传播链汇总：failed（声明序）→ 其传递 skipped（声明序） */
+function computePropagation(dag: TaskDagImpl): PropagationChain[] {
+  const order = new Map(
+    dag.allNodes().map((node, index) => [node.taskId, index]),
+  );
+  const chains: PropagationChain[] = [];
+  for (const failed of dag.allNodes()) {
+    if (failed.status !== 'failed') {
+      continue;
+    }
+    const skipped = dag
+      .allNodes()
+      .filter(
+        (node) => node.status === 'skipped' && node.skippedBy === failed.taskId,
+      )
+      .map((node) => node.taskId);
+    if (skipped.length > 0) {
+      chains.push({
+        failedTaskId: failed.taskId,
+        skipped: skipped.sort(
+          (a, b) => (order.get(a) ?? 0) - (order.get(b) ?? 0),
+        ),
+      });
+    }
+  }
+  return chains;
+}

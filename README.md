@@ -7,7 +7,8 @@ Review。Codex Desktop 负责需求讨论与最终审阅，Repository Intelligen
 
 当前进度：**Phase A（Repository Intelligence 0.1）已交付**，Phase B
 （Fleet Kernel）进行中——M0 工程基线 / M1 CodeGraph + Fallback /
-M2 LLM Wiki / M3 Evidence System / M4 Core Domain（mission 校验）。
+M2 LLM Wiki / M3 Evidence System / M4 Core Domain（mission 校验）/
+M5 Task DAG + Scheduler（确定性调度循环）。
 
 ## 要求
 
@@ -131,6 +132,8 @@ packages/repository/    Repository Intelligence：codegraph 适配层 +
                         evidence（findings / 模式裁决 / 置信度 / 冲突）
 packages/mission/       Fleet Kernel 任务域：Mission/Task/Artifact/Run
                         实体 schema + 两层校验（loader + semantic）
+packages/scheduler/     Fleet Kernel 调度层：Task DAG（环检测/就绪
+                        选择）+ Rule-based Scheduler（并发/重试/传播）
 configs/                fleet.yaml（仓库级 Fleet 配置）
 missions/               mission 文件（demo.yaml 为活样例）
 tests/cli/              CLI 进程级 e2e
@@ -147,6 +150,7 @@ specs/                  Spec Kit 规格与设计文档
 - M2 规格：[specs/003-m2-llm-wiki/spec.md](specs/003-m2-llm-wiki/spec.md)
 - M3 规格：[specs/004-m3-evidence-system/spec.md](specs/004-m3-evidence-system/spec.md)
 - M4 规格：[specs/005-m4-core-domain/spec.md](specs/005-m4-core-domain/spec.md)
+- M5 规格：[specs/006-m5-dag-scheduler/spec.md](specs/006-m5-dag-scheduler/spec.md)
 - 项目宪法：`.specify/memory/constitution.md`
 
 ## 质量门
