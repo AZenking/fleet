@@ -210,6 +210,7 @@ specs/                  Spec Kit 规格与设计文档
 - M11 规格：[specs/012-m11-observability-recovery/spec.md](specs/012-m11-observability-recovery/spec.md)
 - M12 规格：[specs/013-m12-mcp-exposure/spec.md](specs/013-m12-mcp-exposure/spec.md)
 - Control Center 决策：[docs/control-center.md](docs/control-center.md)
+- 使用教程：[docs/tutorial.md](docs/tutorial.md)
 - 项目宪法：`.specify/memory/constitution.md`
 
 ## 质量门
