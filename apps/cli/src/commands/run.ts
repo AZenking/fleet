@@ -182,12 +182,20 @@ export function registerRunCommand(program: Command): void {
           type: string;
           [key: string]: unknown;
         }): void => {
-          const plain = {
-            type: event.type,
-            payload: Object.fromEntries(
-              Object.entries(event).filter(([key]) => key !== 'type'),
-            ) as Record<string, unknown>,
-          };
+          // 领域事件（workspace/budget 等 onEvent）已自带 payload 字段——
+          // 直接透传；运行器事件（字段平铺）才重新包裹
+          const plain =
+            typeof event.payload === 'object' && event.payload !== null
+              ? {
+                  type: event.type,
+                  payload: event.payload as Record<string, unknown>,
+                }
+              : {
+                  type: event.type,
+                  payload: Object.fromEntries(
+                    Object.entries(event).filter(([key]) => key !== 'type'),
+                  ) as Record<string, unknown>,
+                };
           if (sinkEmit !== undefined) {
             sinkEmit(plain);
           } else {
