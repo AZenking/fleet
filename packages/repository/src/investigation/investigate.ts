@@ -159,7 +159,7 @@ export async function investigate(
     });
   } else if (!health.initialized) {
     fallbacks.push({
-      code: 'stale',
+      code: 'uninitialized',
       detail: '仓库未建立 CodeGraph 索引',
       fixSuggestion: '可运行 codegraph init 建立索引（Fleet 不会代为执行）',
     });
@@ -172,6 +172,14 @@ export async function investigate(
       code: 'stale',
       detail: `索引过期：${health.pendingChanges} 个文件比索引新`,
       fixSuggestion: '可运行 codegraph sync 更新索引（Fleet 不会代为执行）',
+    });
+    options.emitEvent?.({
+      type: 'codegraph.fallback',
+      payload: {
+        question,
+        code: 'stale',
+        pendingChanges: health.pendingChanges,
+      },
     });
   } else {
     codegraphUsable = true;

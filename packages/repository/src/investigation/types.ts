@@ -33,6 +33,7 @@ export type Reference = z.infer<typeof referenceSchema>;
 
 export const fallbackReasonCodeSchema = z.enum([
   'unavailable',
+  'uninitialized',
   'timeout',
   'error',
   'stale',

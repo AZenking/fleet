@@ -139,9 +139,9 @@ describe('investigate 故障注入矩阵（宪法原则 I：只降级不失败�
   });
 
   it('stale：索引过期 → 降级并给出 sync 建议', async () => {
-    const result = await investigate(
-      'targetFunc',
-      makeOptions({
+    const staleEvents: Array<{ code: string; pendingChanges?: number }> = [];
+    const result = await investigate('targetFunc', {
+      ...makeOptions({
         health: {
           available: true,
           initialized: true,
@@ -150,11 +150,23 @@ describe('investigate 故障注入矩阵（宪法原则 I：只降级不失败�
           capabilities: ['search'],
         },
       }),
-    );
+      emitEvent: (event) => {
+        if (event.type === 'codegraph.fallback') {
+          staleEvents.push(
+            event.payload as { code: string; pendingChanges?: number },
+          );
+        }
+      },
+    });
     const stale = result.fallbacks.find((reason) => reason.code === 'stale');
     expect(stale?.detail).toContain('3 个文件比索引新');
     expect(stale?.fixSuggestion).toContain('codegraph sync');
     expect(result.references.length).toBeGreaterThan(0);
+    // M11 回归：stale 降级必须发 codegraph.fallback 事件（含落后文件数）
+    expect(staleEvents.map((event) => event.code)).toContain('stale');
+    expect(
+      staleEvents.find((event) => event.code === 'stale')?.pendingChanges,
+    ).toBe(3);
   });
 
   it('missing_symbol：查询为空 → 记录原因，搜索兜底', async () => {
