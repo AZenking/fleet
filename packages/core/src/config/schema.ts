@@ -12,12 +12,25 @@ const defaultsSchema = z.strictObject({
   budget: z.record(z.string(), z.unknown()).optional(),
 });
 
+export const CODEGRAPH_MAINTAIN_POLICIES = ['manual', 'sync', 'auto'] as const;
+export type CodegraphMaintainPolicy =
+  (typeof CODEGRAPH_MAINTAIN_POLICIES)[number];
+
+const codegraphSchema = z.strictObject({
+  /** 索引自动维护策略（specs/014）：manual=只建议（缺省）；
+   * sync=stale 自动 codegraph sync；auto=额外 uninitialized 时 init */
+  autoMaintain: z.enum(CODEGRAPH_MAINTAIN_POLICIES).default('manual'),
+  /** 维护子进程超时上限（ms） */
+  timeoutMs: z.number().int().positive().default(300_000),
+});
+
 export const fleetConfigSchema = z.strictObject({
   /** 配置格式版本；M0 仅接受 1 */
   version: z.literal(1),
   /** 目标仓库路径；缺省 = 仓库根 */
   repository: z.string().optional(),
   defaults: defaultsSchema.default({ maxConcurrency: 3, retry: 1 }),
+  codegraph: codegraphSchema.optional(),
 });
 
 export type FleetConfiguration = z.infer<typeof fleetConfigSchema>;

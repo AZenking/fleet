@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { FakeCodeGraphAdapter } from '../codegraph/fake-adapter.js';
 import type { SymbolHit } from '../codegraph/contract.js';
 import { investigate } from './investigate.js';
+import type { CodeGraphMaintainer } from '../codegraph/maintainer.js';
 import type { FallbackReasonCode } from './types.js';
 
 /**
@@ -307,5 +308,195 @@ describe('M11 加速器事件发射点（FR-003：只补发射，不改行为）
   it('缺省 emitEvent → 零事件亦零异常（向后兼容）', async () => {
     const result = await investigate('targetFunc', makeOptions({}));
     expect(result).toBeDefined();
+  });
+});
+
+describe('specs/014：CodeGraph 自动维护策略矩阵', () => {
+  const STALE = {
+    available: true,
+    initialized: true,
+    indexFresh: false,
+    pendingChanges: 3,
+    capabilities: ['search'],
+  } as const;
+  const UNINIT = {
+    available: true,
+    initialized: false,
+    indexFresh: false,
+    pendingChanges: 0,
+    capabilities: [],
+  } as const;
+  const FRESH = {
+    available: true,
+    initialized: true,
+    indexFresh: true,
+    pendingChanges: 0,
+    capabilities: ['search'],
+  } as const;
+
+  /** 维护成功即改写 adapter 健康（模拟真实 sync 后索引新鲜） */
+  function healingMaintainer(
+    adapter: FakeCodeGraphAdapter,
+    outcome: { ok: boolean; kind?: 'failed' | 'timeout'; detail?: string },
+  ): CodeGraphMaintainer & { calls: string[] } {
+    const calls: string[] = [];
+    return {
+      calls,
+      async init() {
+        calls.push('init');
+        if (outcome.ok) {
+          adapter.setHealth(FRESH);
+        }
+        return outcome.ok
+          ? { ok: true, durationMs: 5 }
+          : {
+              ok: false,
+              kind: outcome.kind ?? 'failed',
+              detail: outcome.detail ?? 'fake 失败',
+              durationMs: 5,
+            };
+      },
+      async sync() {
+        calls.push('sync');
+        if (outcome.ok) {
+          adapter.setHealth(FRESH);
+        }
+        return outcome.ok
+          ? { ok: true, durationMs: 5 }
+          : {
+              ok: false,
+              kind: outcome.kind ?? 'failed',
+              detail: outcome.detail ?? 'fake 失败',
+              durationMs: 5,
+            };
+      },
+    };
+  }
+
+  it('SC-001 manual 档：stale 零维护零变化（现状路径）', async () => {
+    const adapter = new FakeCodeGraphAdapter({ health: STALE });
+    const m = healingMaintainer(adapter, { ok: true });
+    const result = await investigate('targetFunc', {
+      ...makeOptions({}),
+      adapter,
+      codegraph: { policy: 'manual', maintainer: m },
+    });
+    expect(m.calls).toHaveLength(0);
+    expect(result.pathsUsed).not.toContain('codegraph');
+    expect(codes(result.fallbacks)).toContain('stale');
+  });
+
+  it('SC-001 sync 档：stale → 恰一次 sync → 重查命中 codegraph', async () => {
+    const adapter = new FakeCodeGraphAdapter({ health: STALE });
+    const m = healingMaintainer(adapter, { ok: true });
+    const events: string[] = [];
+    const result = await investigate('targetFunc', {
+      ...makeOptions({}),
+      adapter,
+      emitEvent: (event) => events.push(event.type),
+      codegraph: { policy: 'sync', maintainer: m },
+    });
+    expect(m.calls).toEqual(['sync']);
+    expect(result.pathsUsed).toContain('codegraph');
+    expect(result.fallbacks.filter((f) => f.code === 'stale')).toHaveLength(0);
+    expect(events).toContain('codegraph.sync.started');
+    expect(events).toContain('codegraph.sync.completed');
+  });
+
+  it('SC-001 auto 档：uninitialized → 恰一次 init → 命中；sync 档不越档 init', async () => {
+    const adapter = new FakeCodeGraphAdapter({ health: UNINIT });
+    const m = healingMaintainer(adapter, { ok: true });
+    const result = await investigate('targetFunc', {
+      ...makeOptions({}),
+      adapter,
+      codegraph: { policy: 'auto', maintainer: m },
+    });
+    expect(m.calls).toEqual(['init']);
+    expect(result.pathsUsed).toContain('codegraph');
+
+    const adapter2 = new FakeCodeGraphAdapter({ health: UNINIT });
+    const m2 = healingMaintainer(adapter2, { ok: true });
+    const result2 = await investigate('targetFunc', {
+      ...makeOptions({}),
+      adapter: adapter2,
+      codegraph: { policy: 'sync', maintainer: m2 },
+    });
+    expect(m2.calls).toHaveLength(0); // sync 档不 init（越档禁止）
+    expect(result2.pathsUsed).not.toContain('codegraph');
+    const uninit = result2.fallbacks.find((f) => f.code === 'uninitialized');
+    expect(uninit?.fixSuggestion).toContain('auto');
+  });
+
+  it('SC-002 维护失败/超时 → 降级完成 + fallback 含尝试信息（调查不失败）', async () => {
+    for (const outcome of [
+      { ok: false as const, kind: 'failed' as const, detail: 'sync 崩了' },
+      { ok: false as const, kind: 'timeout' as const, detail: '超时' },
+    ]) {
+      const adapter = new FakeCodeGraphAdapter({ health: STALE });
+      const m = healingMaintainer(adapter, outcome);
+      const events: string[] = [];
+      const result = await investigate('targetFunc', {
+        ...makeOptions({}),
+        adapter,
+        emitEvent: (event) => events.push(event.type),
+        codegraph: { policy: 'sync', maintainer: m },
+      });
+      expect(result.references.length).toBeGreaterThanOrEqual(1); // 降级仍出结果
+      expect(result.pathsUsed).not.toContain('codegraph');
+      const stale = result.fallbacks.find((f) => f.code === 'stale');
+      expect(stale?.detail).toContain(`已尝试自动 sync：${outcome.kind}`);
+      expect(events).toContain('codegraph.sync.started');
+      expect(events).toContain('codegraph.sync.failed');
+    }
+  });
+
+  it('SC-003 单次语义：维护成功但重查仍 stale → 直接降级，不二次 sync', async () => {
+    const adapter = new FakeCodeGraphAdapter({ health: STALE });
+    const m: CodeGraphMaintainer & { calls: string[] } = {
+      calls: [],
+      async init() {
+        throw new Error('不应触发 init');
+      },
+      async sync() {
+        m.calls.push('sync');
+        return { ok: true, durationMs: 5 }; // 成功但不 heal（重查仍 stale）
+      },
+    };
+    const result = await investigate('targetFunc', {
+      ...makeOptions({}),
+      adapter,
+      codegraph: { policy: 'auto', maintainer: m },
+    });
+    expect(m.calls).toHaveLength(1); // 恰一次——重查不新鲜不再试
+    expect(result.pathsUsed).not.toContain('codegraph');
+    const stale = result.fallbacks.find((f) => f.code === 'stale');
+    expect(stale?.detail).toContain('完成但索引仍不新鲜');
+  });
+
+  it('SC-005 unavailable × 三档：零维护调用', async () => {
+    for (const policy of ['manual', 'sync', 'auto'] as const) {
+      const adapter = new FakeCodeGraphAdapter({
+        health: {
+          available: false,
+          initialized: false,
+          indexFresh: false,
+          pendingChanges: 0,
+          capabilities: [],
+        },
+      });
+      const m = healingMaintainer(adapter, { ok: true });
+      const result = await investigate('targetFunc', {
+        ...makeOptions({}),
+        adapter,
+        codegraph: { policy, maintainer: m },
+      });
+      expect(m.calls, policy).toHaveLength(0);
+      expect(result.pathsUsed).not.toContain('codegraph');
+    }
+  });
+
+  it('缺省（不传 codegraph 段）= manual 现状', async () => {
+    const result = await investigate('targetFunc', makeOptions({}));
+    expect(result.pathsUsed).toContain('codegraph'); // Fake 默认健康
   });
 });

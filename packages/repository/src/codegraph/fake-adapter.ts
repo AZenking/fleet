@@ -47,6 +47,11 @@ export const HEALTHY_FAKE_HEALTH: CodeGraphHealth = {
 export class FakeCodeGraphAdapter implements CodeGraphAdapter {
   constructor(private readonly script: FakeAdapterScript = {}) {}
 
+  /** 测试辅助：改写后续 health() 返回（维护成功后驱动"重查命中"） */
+  setHealth(next: CodeGraphHealth): void {
+    this.script.health = next;
+  }
+
   async health(): Promise<CodeGraphHealth> {
     return this.script.health ?? HEALTHY_FAKE_HEALTH;
   }

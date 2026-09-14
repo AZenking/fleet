@@ -1,6 +1,8 @@
 import { performance } from 'node:perf_hooks';
 import { RealFileSystem, type FileSystemPort } from '@fleet/core';
 import { CodeGraphCliAdapter } from '../codegraph/cli-adapter.js';
+import { CliCodeGraphMaintainer } from '../codegraph/maintainer.js';
+import type { CodeGraphMaintainer } from '../codegraph/maintainer.js';
 import type { CodeGraphAdapter } from '../codegraph/contract.js';
 import { recentChangedFiles } from '../fallback/git.js';
 import { searchPatterns } from '../fallback/search.js';
@@ -57,6 +59,17 @@ export interface InvestigateOptions {
     type: string;
     payload?: Record<string, unknown>;
   }) => void;
+  /**
+   * CodeGraph 索引维护策略（specs/014）：缺省（不传）= manual =
+   * 现状（只建议不执行）。sync=stale 自动一次 sync；auto=额外
+   * uninitialized 自动一次 init。维护后恰一次重查，单次无循环。
+   */
+  codegraph?: {
+    policy: 'manual' | 'sync' | 'auto';
+    timeoutMs?: number;
+    /** 注入面（缺省 CliCodeGraphMaintainer 惰性构造） */
+    maintainer?: CodeGraphMaintainer;
+  };
 }
 
 /** 引用级高风险检测对代码与配置文件生效，仅排除纯文档 */
@@ -144,7 +157,9 @@ export async function investigate(
     fallbacks.push(wiki.fallback);
   }
 
-  // —— CodeGraph 阶段 ——
+  // —— CodeGraph 阶段（specs/014：manual 档 = 现状路径逐字节不变；
+  // sync/auto 档在此触发至多一次维护并恰一次重查——降级链零改动）——
+  const cgPolicy = options.codegraph?.policy ?? 'manual';
   const health = await adapter.health();
   let codegraphUsable = false;
   if (!health.available) {
@@ -157,32 +172,93 @@ export async function investigate(
       type: 'codegraph.fallback',
       payload: { question, code: 'unavailable' },
     });
-  } else if (!health.initialized) {
-    fallbacks.push({
-      code: 'uninitialized',
-      detail: '仓库未建立 CodeGraph 索引',
-      fixSuggestion: '可运行 codegraph init 建立索引（Fleet 不会代为执行）',
-    });
-    options.emitEvent?.({
-      type: 'codegraph.fallback',
-      payload: { question, code: 'uninitialized' },
-    });
-  } else if (!health.indexFresh) {
-    fallbacks.push({
-      code: 'stale',
-      detail: `索引过期：${health.pendingChanges} 个文件比索引新`,
-      fixSuggestion: '可运行 codegraph sync 更新索引（Fleet 不会代为执行）',
-    });
-    options.emitEvent?.({
-      type: 'codegraph.fallback',
-      payload: {
-        question,
-        code: 'stale',
-        pendingChanges: health.pendingChanges,
-      },
-    });
   } else {
-    codegraphUsable = true;
+    // 可维护态判定：uninitialized（auto 档 init）/ stale（sync|auto 档 sync）
+    const maintainAction: 'init' | 'sync' | undefined = !health.initialized
+      ? cgPolicy === 'auto'
+        ? 'init'
+        : undefined
+      : health.indexFresh
+        ? undefined
+        : cgPolicy === 'manual'
+          ? undefined
+          : 'sync';
+    if (maintainAction === undefined) {
+      if (!health.initialized) {
+        fallbacks.push({
+          code: 'uninitialized',
+          detail: '仓库未建立 CodeGraph 索引',
+          fixSuggestion:
+            cgPolicy === 'manual'
+              ? '可运行 codegraph init 建立索引（Fleet 不会代为执行）'
+              : 'sync 档不自动建索引——配置 codegraph.autoMaintain: auto 可代为 init',
+        });
+        options.emitEvent?.({
+          type: 'codegraph.fallback',
+          payload: { question, code: 'uninitialized' },
+        });
+      } else if (!health.indexFresh) {
+        fallbacks.push({
+          code: 'stale',
+          detail: `索引过期：${health.pendingChanges} 个文件比索引新`,
+          fixSuggestion: '可运行 codegraph sync 更新索引（Fleet 不会代为执行）',
+        });
+        options.emitEvent?.({
+          type: 'codegraph.fallback',
+          payload: {
+            question,
+            code: 'stale',
+            pendingChanges: health.pendingChanges,
+          },
+        });
+      } else {
+        codegraphUsable = true;
+      }
+    } else {
+      // 策略授权的自动维护：单次执行 → 恰一次重查（无循环）
+      const timeoutMs = options.codegraph?.timeoutMs ?? 300_000;
+      const maintainer =
+        options.codegraph?.maintainer ??
+        new CliCodeGraphMaintainer({ repoRoot: options.repoRoot });
+      const outcome = await runMaintainAction(
+        maintainAction,
+        cgPolicy,
+        timeoutMs,
+        maintainer,
+        options,
+      );
+      if (outcome.ok) {
+        const recheck = await adapter.health();
+        if (recheck.available && recheck.initialized && recheck.indexFresh) {
+          codegraphUsable = true;
+        }
+      }
+      if (!codegraphUsable) {
+        // 维护未奏效 → 现状降级语义 + 记录尝试（FR-005）
+        const staleNow = health.initialized && !health.indexFresh;
+        const attemptNote = `已尝试自动 ${maintainAction}：${
+          outcome.ok
+            ? '完成但索引仍不新鲜'
+            : `${outcome.kind}（${outcome.detail}）`
+        }`;
+        fallbacks.push({
+          code: staleNow ? 'stale' : 'uninitialized',
+          detail: staleNow
+            ? `索引过期：${health.pendingChanges} 个文件比索引新；${attemptNote}`
+            : `仓库未建立 CodeGraph 索引；${attemptNote}`,
+          fixSuggestion: '自动维护未奏效——可手动运行 codegraph init/sync 排查',
+        });
+        options.emitEvent?.({
+          type: 'codegraph.fallback',
+          payload: {
+            question,
+            code: staleNow ? 'stale' : 'uninitialized',
+            maintained: true,
+            attempt: maintainAction,
+          },
+        });
+      }
+    }
   }
 
   const candidates: Reference[] = [];
@@ -458,3 +534,31 @@ export async function investigate(
 }
 
 export type { EffectiveMode, ModeResolution };
+
+/** 策略维护执行：started → 动作 → completed/failed 事件（specs/014 D4） */
+async function runMaintainAction(
+  action: 'init' | 'sync',
+  policy: 'manual' | 'sync' | 'auto',
+  timeoutMs: number,
+  maintainer: import('../codegraph/maintainer.js').CodeGraphMaintainer,
+  options: InvestigateOptions,
+): Promise<import('../codegraph/maintainer.js').MaintainOutcome> {
+  options.emitEvent?.({
+    type: `codegraph.${action}.started`,
+    payload: { action, policy },
+  });
+  const outcome =
+    action === 'init'
+      ? await maintainer.init({ timeoutMs })
+      : await maintainer.sync({ timeoutMs });
+  options.emitEvent?.({
+    type: `codegraph.${action}.${outcome.ok ? 'completed' : 'failed'}`,
+    payload: {
+      action,
+      policy,
+      durationMs: outcome.durationMs,
+      ...(outcome.ok ? {} : { kind: outcome.kind, detail: outcome.detail }),
+    },
+  });
+  return outcome;
+}

@@ -32,6 +32,18 @@ export function registerRepoCommand(program: Command): void {
     )
     .option('--include-generated', '包含生成代码 / 产物目录')
     .option(
+      '--codegraph-maintain <policy>',
+      'CodeGraph 索引维护策略：manual（默认，只建议）/ sync（stale 自动一次 codegraph sync）/ auto（额外未建索引时 init）——旗标 > configs/fleet.yaml > 缺省',
+      (value: string) => {
+        if (value !== 'manual' && value !== 'sync' && value !== 'auto') {
+          throw new Error(
+            `无效的 codegraph-maintain：${value}（可选 manual/sync/auto）`,
+          );
+        }
+        return value;
+      },
+    )
+    .option(
       '--mode <mode>',
       '调查模式：auto（默认，高风险自动 verify）/ fast（跳过强制源码复核）/ verify（全链复核）',
       (value: string) => {
@@ -50,6 +62,7 @@ export function registerRepoCommand(program: Command): void {
           maxRefs?: number;
           includeGenerated?: boolean;
           mode?: 'auto' | 'fast' | 'verify';
+          codegraphMaintain?: 'manual' | 'sync' | 'auto';
         },
       ) => {
         let repoRoot: string;
@@ -61,11 +74,18 @@ export function registerRepoCommand(program: Command): void {
           return;
         }
 
+        // specs/014：维护策略解析——旗标 > configs/fleet.yaml > 缺省 manual
+        const cgOptions = resolveCodegraphMaintain(
+          repoRoot,
+          options.codegraphMaintain,
+        );
+
         const result = await investigate(question, {
           repoRoot,
           maxRefs: options.maxRefs,
           includeGenerated: options.includeGenerated,
           mode: options.mode,
+          ...(cgOptions !== undefined ? { codegraph: cgOptions } : {}),
         });
 
         const event: FleetEvent = {
@@ -157,4 +177,33 @@ function renderHuman(result: InvestigationResult): string {
   }
   lines.push(result.summary);
   return lines.join('\n');
+}
+
+/** specs/014：维护策略解析（旗标 > configs/fleet.yaml > manual；缺文件/缺段 = manual） */
+function resolveCodegraphMaintain(
+  repoRoot: string,
+  flag: 'manual' | 'sync' | 'auto' | undefined,
+): { policy: 'manual' | 'sync' | 'auto'; timeoutMs?: number } | undefined {
+  if (flag !== undefined) {
+    return { policy: flag };
+  }
+  try {
+    const raw = readFileSync(
+      path.join(repoRoot, 'configs', 'fleet.yaml'),
+      'utf8',
+    );
+    const config = loadFleetConfig(raw, {
+      sourcePath: path.join(repoRoot, 'configs', 'fleet.yaml'),
+    });
+    if (config.codegraph === undefined) {
+      return undefined; // 未配置段 = manual 现状（不显式传，investigate 缺省同义）
+    }
+    return {
+      policy: config.codegraph.autoMaintain,
+      timeoutMs: config.codegraph.timeoutMs,
+    };
+  } catch {
+    // 配置缺失/损坏在此不阻断调查（doctor 面负责报）——按未配置处理
+    return undefined;
+  }
 }

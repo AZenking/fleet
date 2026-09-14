@@ -102,3 +102,28 @@ describe('loadFleetConfig', () => {
     }
   });
 });
+
+describe('codegraph 维护策略段（specs/014）', () => {
+  it('合法三值 + 缺省 manual/300000', () => {
+    for (const policy of ['manual', 'sync', 'auto']) {
+      const config = loadFleetConfig(
+        `version: 1\ncodegraph:\n  autoMaintain: ${policy}\n`,
+      );
+      expect(config.codegraph?.autoMaintain).toBe(policy);
+      expect(config.codegraph?.timeoutMs).toBe(300_000);
+    }
+    expect(loadFleetConfig('version: 1\n').codegraph).toBeUndefined();
+  });
+
+  it('非法值 / 非法超时 / 未知字段拒绝', () => {
+    expect(() =>
+      loadFleetConfig('version: 1\ncodegraph:\n  autoMaintain: always\n'),
+    ).toThrow();
+    expect(() =>
+      loadFleetConfig('version: 1\ncodegraph:\n  timeoutMs: -1\n'),
+    ).toThrow();
+    expect(() =>
+      loadFleetConfig('version: 1\ncodegraph:\n  unknown: 1\n'),
+    ).toThrow();
+  });
+});

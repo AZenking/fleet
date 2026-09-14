@@ -229,3 +229,16 @@ Codex Desktop 的 MCP 配置里加两条：
 
 **事件流在 stderr**——默认 debug 事件打 stderr（`2>/dev/null` 清屏），stdout 干净
 可管道。
+
+**CodeGraph 索引过期（stale）**——缺省 Fleet 只降级到搜索并建议你手动
+`codegraph sync`。想让它自动维护，在 configs/fleet.yaml 配置：
+
+```yaml
+codegraph:
+  autoMaintain: sync # stale 时自动一次 codegraph sync
+  # autoMaintain: auto # 更进一步：未建索引时自动 init（首次建索引可能分钟级）
+```
+
+或单次覆盖：`fleet repo investigate "问题" --codegraph-maintain sync`。
+维护是单次的（一次调查至多一次动作）、失败/超时只降级不影响调查结果，
+全程 `codegraph.init/sync.*` 事件可查。

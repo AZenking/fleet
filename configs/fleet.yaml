@@ -1,1 +1,5 @@
 version: 1
+# CodeGraph 索引维护策略（specs/014；缺省 manual = 只建议不执行）
+# codegraph:
+#   autoMaintain: sync   # manual | sync | auto（auto 含未建索引时代为 init）
+#   timeoutMs: 300000    # 维护子进程超时

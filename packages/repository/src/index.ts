@@ -13,6 +13,7 @@
 export const REPOSITORY_READY = true;
 
 export * from './codegraph/contract.js';
+export * from './codegraph/maintainer.js';
 export * from './codegraph/cli-adapter.js';
 export * from './codegraph/health.js';
 export * from './codegraph/fake-adapter.js';

@@ -1,6 +1,7 @@
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
-import { RealFileSystem } from '@fleet/core';
+import { RealFileSystem, loadFleetConfig } from '@fleet/core';
 import {
   CodeGraphCliAdapter,
   investigate,
@@ -79,8 +80,26 @@ export function buildRepoTools(): ToolDefinition[] {
         required: ['question'],
       },
       handler: async (args) => {
+        const repoRoot = repoRootOf(args);
+        // specs/014：与 CLI 同语义（读 configs/fleet.yaml；缺 = manual 现状）
+        let cgOptions: { policy: 'manual' | 'sync' | 'auto' } | undefined;
+        try {
+          const raw = readFileSync(
+            path.join(repoRoot, 'configs', 'fleet.yaml'),
+            'utf8',
+          );
+          const config = loadFleetConfig(raw, {
+            sourcePath: path.join(repoRoot, 'configs', 'fleet.yaml'),
+          });
+          if (config.codegraph !== undefined) {
+            cgOptions = { policy: config.codegraph.autoMaintain };
+          }
+        } catch {
+          // 未配置 = manual 现状
+        }
         const result = await investigate(strOf(args, 'question'), {
-          repoRoot: repoRootOf(args),
+          repoRoot,
+          ...(cgOptions !== undefined ? { codegraph: cgOptions } : {}),
         });
         return ok(JSON.stringify(result, null, 2).slice(0, 60_000), result);
       },
