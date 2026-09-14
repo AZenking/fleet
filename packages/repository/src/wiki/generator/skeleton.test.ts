@@ -128,7 +128,7 @@ describe('scanRepo（非 monorepo 兜底）', () => {
     expect(overview?.content).toContain('单项目');
     const authPage = scan.specs.find((spec) => spec.path === 'domains/auth.md');
     expect(authPage?.scope).toEqual(['src/auth']);
-    expect(authPage?.content).toContain('`auth/login.ts`');
+    expect(authPage?.content).toContain('`src/auth/login.ts`');
   });
 });
 
@@ -184,5 +184,36 @@ describe('initWiki（FR-001 幂等）', () => {
       (page) => page.path === 'architecture/README.md',
     );
     expect(readme?.origin).toBe('manual');
+  });
+});
+
+describe('M2 缺陷回归：domains 引用基准 = 仓库根（防 dead_reference 误报）', () => {
+  it('顶层 src/ 布局：生成的路径 token 全部相对仓库根存在', () => {
+    const fs = new MemoryFileSystem();
+    fs.writeFile('/repo/package.json', '{ "name": "app" }');
+    fs.writeFile('/repo/src/util/version.js', 'export const V = 1;\n');
+    fs.writeFile('/repo/src/util/platform.js', 'export const P = 2;\n');
+    fs.writeFile('/repo/src/views/index.vue', '<template/>\n');
+    const scan = scanRepo(fs, '/repo');
+    const domainPages = scan.specs.filter((spec) =>
+      spec.path.startsWith('domains/'),
+    );
+    expect(domainPages.length).toBeGreaterThanOrEqual(2); // util + views
+    const utilPage = domainPages.find(
+      (spec) => spec.path === 'domains/util.md',
+    );
+    expect(utilPage?.content).toContain('- `src/util/version.js`');
+    // 校验器语义：token 按仓库根解析必须存在
+    for (const spec of domainPages) {
+      const tokens = [...spec.content.matchAll(/`([^`\\n]+)`/g)]
+        .map((m) => m[1]!)
+        .filter((t) => t.includes('/') && /^[@A-Za-z0-9._\-/]+$/.test(t));
+      for (const token of tokens) {
+        expect(
+          pathExists(fs, `/repo/${token}`),
+          `token ${token} 应按仓库根可解析`,
+        ).toBe(true);
+      }
+    }
   });
 });

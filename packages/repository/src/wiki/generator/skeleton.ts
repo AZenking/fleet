@@ -659,7 +659,7 @@ function plainRepoSpecs(
     }
     for (const file of files) {
       if (countFile(budget)) {
-        overviewLines.push(`- ${file}`);
+        overviewLines.push(`- \`src/${file}\``);
       }
     }
   } else {
@@ -685,7 +685,8 @@ function plainRepoSpecs(
       .filter((entry) => !isDirectory(fs, path.join(srcDir, dir, entry)));
     for (const file of subFiles) {
       if (countFile(budget)) {
-        subLines.push(`- \`${dir}/${file}\``);
+        // 仓库根相对路径（对齐校验器 repoRoot 解析——缺 src/ 前缀会误报 dead_reference）
+        subLines.push(`- \`src/${dir}/${file}\``);
       }
     }
     subLines.push('', '（本页由 `fleet wiki build` 生成。）');
